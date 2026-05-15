@@ -20,24 +20,27 @@ jobs:
           host: 'windows'
           target: 'desktop'
           arch: 'win64_mingw'
-          tools: 'tools_mingw1310_64'
+          tools: 'tools_mingw1310'
           cache: true
 
-      - name: Find MinGW
+      - name: Add MinGW to PATH
         run: |
-          $mingw = Get-ChildItem "C:\Users\runneradmin\AppData\Local\aqt" -Recurse -Filter "mingw32-make.exe" | Select-Object -First 1
-          if (-not $mingw) {
-            $mingw = Get-ChildItem "D:\a" -Recurse -Filter "mingw32-make.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          $mingw = Get-ChildItem "$env:RUNNER_WORKSPACE" -Recurse -Filter "mingw32-make.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($mingw) {
+            echo "$($mingw.DirectoryName)" >> $env:GITHUB_PATH
+            echo "Found MinGW: $($mingw.DirectoryName)"
+          } else {
+            echo "MinGW not found, searching Qt dir..."
+            $mingw2 = Get-ChildItem "D:\a\RedstoneEngineer\Qt" -Recurse -Filter "mingw32-make.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            echo "$($mingw2.DirectoryName)" >> $env:GITHUB_PATH
+            echo "Found MinGW: $($mingw2.DirectoryName)"
           }
-          echo "MINGW_PATH=$($mingw.DirectoryName)" >> $env:GITHUB_ENV
-          echo "Found MinGW at: $($mingw.DirectoryName)"
 
       - name: Configure CMake
         run: |
           cmake -B build `
             -G "MinGW Makefiles" `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_MAKE_PROGRAM="${{ env.MINGW_PATH }}\mingw32-make.exe"
+            -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         run: cmake --build build --parallel

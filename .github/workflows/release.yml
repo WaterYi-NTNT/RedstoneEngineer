@@ -1,0 +1,49 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'          # 推送 v0.1 / v1.0 等 tag 时触发
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: '6.11.0'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_mingw'
+          tools: 'tools_mingw1310'
+
+      - name: Configure CMake
+        run: cmake -B build -G "MinGW Makefiles"
+              -DCMAKE_BUILD_TYPE=Release
+              -DCMAKE_PREFIX_PATH=${{ env.Qt6_DIR }}
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Deploy Qt dependencies
+        run: |
+          mkdir release
+          copy build\RedstoneEngineer.exe release\
+          windeployqt release\RedstoneEngineer.exe
+
+      - name: Package
+        run: |
+          cd release
+          7z a ..\RedstoneEngineer-windows.zip *
+
+      - name: Upload Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: RedstoneEngineer-windows.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

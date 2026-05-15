@@ -1,0 +1,1105 @@
+#include "editor2d/GridScene.h"
+#include "core/BlockModelLoader.h"
+#include "core/BlockModel.h"
+#include "core/BlockStateLoader.h"
+#include "sim/SimFlags.h"
+
+#include <QPainter>
+#include <QGraphicsSceneMouseEvent>
+#include <QKeyEvent>
+#include <QFont>
+#include <QtMath>
+#include <QDir>
+#include <cmath>
+#include <unordered_map>
+
+
+GridScene::GridScene(VoxelWorld *world, QObject *parent)
+    : QGraphicsScene(parent)
+    , m_world(world)
+{
+    const int halfPx = VoxelWorld::WORLD_MAX * CELL_SIZE;
+    setSceneRect(-halfPx, -halfPx, halfPx * 2, halfPx * 2);
+    setBackgroundBrush(QColor(0x1A, 0x1A, 0x2E));
+
+    m_flashTimer = new QTimer(this);
+    m_flashTimer->setInterval(100);
+    connect(m_flashTimer, &QTimer::timeout, this, [this]()
+    {
+        if (m_flashFrames.isEmpty()) { m_flashTimer->stop(); return; }
+        QList<QPoint> expired;
+        for (auto it = m_flashFrames.begin(); it != m_flashFrames.end(); ++it)
+            if (--it.value() <= 0) expired.append(it.key());
+        for (const QPoint &p : expired) m_flashFrames.remove(p);
+        QList<QPoint> all = m_flashFrames.keys();
+        all.append(expired);
+        for (const QPoint &p : all)
+            update(QRectF(gridToScene(p.x(), p.y()), QSizeF(CELL_SIZE, CELL_SIZE)));
+    });
+}
+
+
+void GridScene::markSimChanged(const QVector<VoxelCoord> &changed)
+{
+    bool any = false;
+    for (const VoxelCoord &c : changed) {
+        if (c.y != m_currentLayer) continue;
+        m_flashFrames[QPoint(c.x, c.z)] = FLASH_FRAMES_INIT;
+        any = true;
+    }
+    if (any && !m_flashTimer->isActive())
+        m_flashTimer->start();
+}
+
+
+QPoint  GridScene::sceneToGrid(const QPointF &p) const
+{
+    return QPoint(static_cast<int>(std::floor(p.x() / CELL_SIZE)),
+                  static_cast<int>(std::floor(p.y() / CELL_SIZE)));
+}
+QPointF GridScene::gridToScene(int gx, int gz) const
+{
+    return QPointF(gx * CELL_SIZE, gz * CELL_SIZE);
+}
+
+
+void GridScene::setCurrentLayer(int y)
+{
+    if (y < VoxelWorld::LAYER_MIN || y > VoxelWorld::LAYER_MAX) return;
+    m_currentLayer = y;
+    m_hasSelection = false;
+    m_flashFrames.clear();
+    update();
+    emit layerChanged(y);
+}
+void GridScene::refresh() { update(); }
+
+
+void GridScene::setEditMode(EditMode mode)
+{
+    m_editMode     = mode;
+    m_hasSelection = false;
+    m_isDrawing    = false;
+    m_isErasing    = false;
+    update();
+    emit editModeChanged(mode);
+}
+
+
+void GridScene::keyPressEvent(QKeyEvent *event)
+{
+    switch (event->key())
+    {
+    case Qt::Key_Q:
+        setEditMode(EditMode::Paint);
+        return;
+    case Qt::Key_E:
+        setEditMode(EditMode::Select);
+        return;
+    case Qt::Key_R:
+        if (m_editMode == EditMode::Paint) {
+            rotateCurrent();
+        } else {
+            setEditMode(EditMode::Interact);
+        }
+        return;
+    default:
+        break;
+    }
+    QGraphicsScene::keyPressEvent(event);
+}
+
+
+void GridScene::rotateCurrent()
+{
+    if (m_editMode == EditMode::Paint)
+    {
+        m_paintFacing = rotateFacingCW(m_paintFacing);
+        if (m_paintType == BlockType::Hopper && m_paintFacing == BlockFacing::Up)
+            m_paintFacing = BlockFacing::Down;
+        const auto &meta = getBlockMeta(m_paintType);
+        if (!meta.canFaceVertically &&
+            (m_paintFacing == BlockFacing::Up || m_paintFacing == BlockFacing::Down))
+            m_paintFacing = BlockFacing::North;
+        emit facingChanged(m_paintFacing);
+        return;
+    }
+
+    if (m_editMode == EditMode::Select)
+    {
+        if (!m_hasSelection || !m_world) return;
+        Block *b = m_world->getBlockMutable(m_selX, m_currentLayer, m_selZ);
+        if (!b || b->isEmpty()) return;
+        const auto &meta = getBlockMeta(b->type);
+        if (!meta.hasDirection) return;
+
+        b->facing = rotateFacingCW(b->facing);
+        if (b->type == BlockType::Hopper && b->facing == BlockFacing::Up)
+            b->facing = BlockFacing::Down;
+        if (!meta.canFaceVertically &&
+            (b->facing == BlockFacing::Up || b->facing == BlockFacing::Down))
+            b->facing = BlockFacing::North;
+
+        m_world->notifyChange(m_selX, m_currentLayer, m_selZ, *b);
+        for (int dx=-1; dx<=1; ++dx)
+        for (int dz=-1; dz<=1; ++dz)
+            update(QRectF(gridToScene(m_selX+dx, m_selZ+dz), QSizeF(CELL_SIZE,CELL_SIZE)));
+        emit blockModified   (m_selX, m_currentLayer, m_selZ);
+        emit selectionChanged(m_selX, m_currentLayer, m_selZ, *b);
+    }
+}
+
+
+bool GridScene::isInteractableSource(int gx, int gz) const
+{
+    if (!m_world || !m_world->hasBlock(gx, m_currentLayer, gz)) return false;
+    const Block &b = m_world->getBlock(gx, m_currentLayer, gz);
+    switch (b.type) {
+    case BlockType::Lever:
+    case BlockType::StoneButton:
+    case BlockType::WoodButton:
+    case BlockType::StonePressurePlate:
+    case BlockType::WoodPressurePlate:
+    case BlockType::LightWeightedPressurePlate:
+    case BlockType::HeavyWeightedPressurePlate:
+        return true;
+    default: return false;
+    }
+}
+
+bool GridScene::isRepeater(int gx, int gz) const
+{
+    if (!m_world || !m_world->hasBlock(gx, m_currentLayer, gz)) return false;
+    return m_world->getBlock(gx, m_currentLayer, gz).type == BlockType::Repeater;
+}
+
+void GridScene::cycleRepeaterDelay(int gx, int gz)
+{
+    if(!m_world) return;
+    Block *b = m_world->getBlockMutable(gx, m_currentLayer, gz);
+    if(!b || b->type != BlockType::Repeater) return;
+
+    uint8_t cur  = SimFlags::getRepeaterDelay(b->flags);
+    uint8_t next = static_cast<uint8_t>((cur + 1) % 4);
+    b->flags     = SimFlags::setRepeaterDelay(b->flags, next);
+
+    m_world->notifyChange(gx, m_currentLayer, gz, *b);
+
+    for(int dx=-1; dx<=1; ++dx)
+    for(int dz=-1; dz<=1; ++dz)
+        update(QRectF(gridToScene(gx+dx, gz+dz), QSizeF(CELL_SIZE, CELL_SIZE)));
+
+    emit blockModified(gx, m_currentLayer, gz);
+}
+
+
+void GridScene::mousePressEvent(QGraphicsSceneMouseEvent *event)
+{
+    const QPoint g  = sceneToGrid(event->scenePos());
+    const int gx = g.x(), gz = g.y();
+
+    switch (m_editMode)
+    {
+    case EditMode::Paint:
+        if (event->button() == Qt::LeftButton) {
+            m_isDrawing = true; m_isErasing = false;
+            paintCell(event->scenePos(), false);
+        } else if (event->button() == Qt::RightButton) {
+            m_isErasing = true; m_isDrawing = false;
+            paintCell(event->scenePos(), true);
+        }
+        break;
+
+    case EditMode::Select:
+        if (event->button() == Qt::LeftButton)
+            selectCell(event->scenePos());
+        break;
+
+    case EditMode::Interact:
+        if (event->button() == Qt::LeftButton)
+            interactCell(event->scenePos());
+        else if (event->button() == Qt::RightButton)
+            adjustCell(event->scenePos());
+        break;
+    }
+
+    QGraphicsScene::mousePressEvent(event);
+}
+
+void GridScene::mouseMoveEvent(QGraphicsSceneMouseEvent *event)
+{
+    if (m_editMode == EditMode::Paint) {
+        if      (m_isDrawing) paintCell(event->scenePos(), false);
+        else if (m_isErasing) paintCell(event->scenePos(), true);
+    }
+    QGraphicsScene::mouseMoveEvent(event);
+}
+
+void GridScene::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
+{
+    m_isDrawing = m_isErasing = false;
+    QGraphicsScene::mouseReleaseEvent(event);
+}
+
+
+void GridScene::paintCell(const QPointF &scenePos, bool erase)
+{
+    if (!m_world) return;
+    const QPoint g = sceneToGrid(scenePos);
+    const int gx = g.x(), gz = g.y();
+
+    if (erase) {
+        if (!m_world->hasBlock(gx, m_currentLayer, gz)) return;
+        m_world->clearBlock(gx, m_currentLayer, gz);
+        m_flashFrames.remove(QPoint(gx, gz));
+    } else {
+        if (m_world->hasBlock(gx, m_currentLayer, gz)) return;
+        m_world->setBlock(gx, m_currentLayer, gz,
+                          Block::make(m_paintType, m_paintFacing));
+    }
+    for (int dx=-1; dx<=1; ++dx)
+    for (int dz=-1; dz<=1; ++dz)
+        update(QRectF(gridToScene(gx+dx, gz+dz), QSizeF(CELL_SIZE,CELL_SIZE)));
+    emit blockModified(gx, m_currentLayer, gz);
+}
+
+
+void GridScene::selectCell(const QPointF &scenePos)
+{
+    if (!m_world) return;
+    const QPoint g = sceneToGrid(scenePos);
+    const int gx = g.x(), gz = g.y();
+    const int oldX = m_selX, oldZ = m_selZ;
+    const bool hadSel = m_hasSelection;
+
+    if (m_world->hasBlock(gx, m_currentLayer, gz)) {
+        m_hasSelection = true; m_selX = gx; m_selZ = gz;
+        emit selectionChanged(gx, m_currentLayer, gz,
+                              m_world->getBlock(gx, m_currentLayer, gz));
+    } else {
+        m_hasSelection = false;
+    }
+    if (hadSel)
+        update(QRectF(gridToScene(oldX, oldZ), QSizeF(CELL_SIZE,CELL_SIZE)));
+    if (m_hasSelection)
+        update(QRectF(gridToScene(m_selX, m_selZ), QSizeF(CELL_SIZE,CELL_SIZE)));
+}
+
+
+void GridScene::interactCell(const QPointF &scenePos)
+{
+    if (!m_world) return;
+    const QPoint g = sceneToGrid(scenePos);
+    const int gx = g.x(), gz = g.y();
+
+    if (!isInteractableSource(gx, gz)) return;
+
+    emit sourceInteracted(gx, m_currentLayer, gz);
+    for (int dx=-1; dx<=1; ++dx)
+    for (int dz=-1; dz<=1; ++dz)
+        update(QRectF(gridToScene(gx+dx, gz+dz), QSizeF(CELL_SIZE,CELL_SIZE)));
+}
+
+
+void GridScene::adjustCell(const QPointF &scenePos)
+{
+    if(!m_world) return;
+    const QPoint g = sceneToGrid(scenePos);
+    const int gx = g.x(), gz = g.y();
+
+    if(!m_world->hasBlock(gx, m_currentLayer, gz)) return;
+    Block *b = m_world->getBlockMutable(gx, m_currentLayer, gz);
+    if(!b) return;
+
+    switch(b->type)
+    {
+    case BlockType::Repeater:
+        cycleRepeaterDelay(gx, gz);
+        break;
+
+    case BlockType::Comparator:
+    {
+        b->flags = SimFlags::toggleComparatorMode(b->flags);
+        m_world->notifyChange(gx, m_currentLayer, gz, *b);
+        for(int dx=-1; dx<=1; ++dx)
+        for(int dz=-1; dz<=1; ++dz)
+            update(QRectF(gridToScene(gx+dx, gz+dz),
+                        QSizeF(CELL_SIZE, CELL_SIZE)));
+        emit blockModified(gx, m_currentLayer, gz);
+        break;
+    }
+
+    default:
+        break;
+    }
+}
+
+
+void GridScene::drawBackground(QPainter *painter, const QRectF &rect)
+{
+    QGraphicsScene::drawBackground(painter, rect);
+    const int l = static_cast<int>(std::floor(rect.left()  /CELL_SIZE))*CELL_SIZE;
+    const int t = static_cast<int>(std::floor(rect.top()   /CELL_SIZE))*CELL_SIZE;
+    const int r = static_cast<int>(std::ceil (rect.right() /CELL_SIZE))*CELL_SIZE;
+    const int b = static_cast<int>(std::ceil (rect.bottom()/CELL_SIZE))*CELL_SIZE;
+
+    painter->setPen(QPen(QColor(255,255,255,30), 0.5));
+    for (int x=l; x<=r; x+=CELL_SIZE) painter->drawLine(x,t,x,b);
+    for (int z=t; z<=b; z+=CELL_SIZE) painter->drawLine(l,z,r,z);
+
+    const int CHUNK=CELL_SIZE*8;
+    const int lc=static_cast<int>(std::floor(rect.left()  /CHUNK))*CHUNK;
+    const int tc=static_cast<int>(std::floor(rect.top()   /CHUNK))*CHUNK;
+    const int rc=static_cast<int>(std::ceil (rect.right() /CHUNK))*CHUNK;
+    const int bc=static_cast<int>(std::ceil (rect.bottom()/CHUNK))*CHUNK;
+    painter->setPen(QPen(QColor(255,255,255,50), 0.8));
+    for (int x=lc; x<=rc; x+=CHUNK) painter->drawLine(x,t,x,b);
+    for (int z=tc; z<=bc; z+=CHUNK) painter->drawLine(l,z,r,z);
+
+    painter->setPen(QPen(QColor(0x80,0x80,0xC0), 1.5));
+    painter->drawLine(0,t,0,b);
+    painter->drawLine(l,0,r,0);
+}
+
+
+void GridScene::drawForeground(QPainter *painter, const QRectF &rect)
+{
+    if (!m_world) return;
+    const int gxMin=static_cast<int>(std::floor(rect.left()  /CELL_SIZE))-1;
+    const int gzMin=static_cast<int>(std::floor(rect.top()   /CELL_SIZE))-1;
+    const int gxMax=static_cast<int>(std::ceil (rect.right() /CELL_SIZE))+1;
+    const int gzMax=static_cast<int>(std::ceil (rect.bottom()/CELL_SIZE))+1;
+
+    for (const auto &[coord, block] : m_world->allBlocks()) {
+        if (coord.y!=m_currentLayer)           continue;
+        if (block.isEmpty())                   continue;
+        if (coord.x<gxMin||coord.x>gxMax)     continue;
+        if (coord.z<gzMin||coord.z>gzMax)     continue;
+        drawBlock(painter, coord.x, coord.z, block);
+    }
+
+    if (m_hasSelection && m_editMode == EditMode::Select)
+        drawSelectionHighlight(painter, m_selX, m_selZ);
+}
+
+
+static QString texPathFromModel(const BlockModel &model, int preferredFace)
+{
+
+    for (const auto &elem : model.elements) {
+        const ModelFace &f = elem.faces[preferredFace];
+        if (f.present && !f.texturePath.isEmpty())
+            return f.texturePath;
+    }
+
+    for (const auto &elem : model.elements)
+        for (const auto &f : elem.faces)
+            if (f.present && !f.texturePath.isEmpty())
+                return f.texturePath;
+    return {};
+}
+
+
+QString GridScene::getStateTexPath(const Block &block, int faceIndex) const
+{
+    BlockStateResult bsr;
+
+    switch (block.type)
+    {
+
+    case BlockType::Repeater:
+    {
+        const bool active = (block.flags & SimFlags::ACTIVE) != 0;
+        const bool locked = (block.flags & SimFlags::LOCKED) != 0;
+        const int  delay  = SimFlags::getRepeaterDelay(block.flags) + 1;
+
+        BlockStateQuery q;
+        q.facing        = block.facing;
+        q.powered       = active; q.matchPowered = true;
+        q.locked        = locked; q.matchLocked  = true;
+        q.repeaterDelay = delay;  q.matchDelay   = true;
+
+        bsr = BlockStateLoader::getResultWithQuery("repeater", q);
+        if (!bsr.isValid())
+            bsr = BlockStateLoader::getResult(block.type, block.facing);
+        break;
+    }
+
+
+    case BlockType::RedstoneTorch:
+    {
+        const bool lit = (block.flags & SimFlags::ACTIVE) != 0;
+
+        BlockStateQuery q;
+        q.facing   = block.facing;
+        q.lit      = lit; q.matchLit = true;
+
+        bsr = BlockStateLoader::getResultWithQuery("redstone_torch", q);
+        if (!bsr.isValid())
+            bsr = BlockStateLoader::getResult(block.type, block.facing);
+        break;
+    }
+
+
+    case BlockType::Comparator:
+    {
+        const bool active   = (block.flags & SimFlags::ACTIVE) != 0;
+        const bool subtract = SimFlags::isSubtractMode(block.flags);
+
+        BlockStateQuery q;
+        q.facing    = block.facing;
+        q.powered   = active;                           q.matchPowered = true;
+        q.mode      = subtract ? "subtract" : "compare"; q.matchMode  = true;
+
+        bsr = BlockStateLoader::getResultWithQuery("comparator", q);
+        if (!bsr.isValid())
+            bsr = BlockStateLoader::getResult(block.type, block.facing);
+        break;
+    }
+
+    default:
+        return {};
+    }
+
+    if (!bsr.isValid()) return {};
+
+    BlockModel model = BlockModelLoader::load(bsr.modelName);
+    if (!model.isValid || model.elements.isEmpty()) return {};
+
+    return texPathFromModel(model, faceIndex);
+}
+
+
+GridScene::TexInfo GridScene::getTopViewTex(const Block &block) const
+{
+    const BlockFacing f    = block.facing;
+    const bool horiz  = (f==BlockFacing::North||f==BlockFacing::South
+                      || f==BlockFacing::East ||f==BlockFacing::West);
+    const bool facingUp = (f==BlockFacing::Up);
+    const bool facingDn = (f==BlockFacing::Down);
+    const double rot    = horiz ? facingToAngle(f) : 0.0;
+
+    switch (block.type)
+    {
+
+
+    case BlockType::Repeater:
+    {
+        const QString path = getStateTexPath(block, FACE_UP);
+        if (!path.isEmpty())
+            return {path, rot, true};
+        return {QStringLiteral("repeater_top"), rot, true};
+    }
+
+
+    case BlockType::RedstoneTorch:
+    {
+        const QString path = getStateTexPath(block, FACE_NORTH);
+        if (!path.isEmpty())
+            return {path, 0.0, false};
+
+        const auto &meta = getBlockMeta(block.type);
+        return {QString(meta.enumKey), 0.0, false};
+    }
+
+
+    case BlockType::Comparator:
+    {
+        const QString path = getStateTexPath(block, FACE_UP);
+        if (!path.isEmpty())
+            return {path, rot, true};
+        return {QStringLiteral("comparator_top"), rot, true};
+    }
+
+
+    case BlockType::Piston:
+        if (facingUp) return {"piston_top_normal",0.0,false};
+        if (facingDn) return {"piston_bottom",    0.0,false};
+        return {"piston_side", rot, true};
+    case BlockType::StickyPiston:
+        if (facingUp) return {"piston_top_sticky",0.0,false};
+        if (facingDn) return {"piston_bottom",    0.0,false};
+        return {"piston_side", rot, true};
+    case BlockType::Observer:
+        if (facingUp) return {"observer_front",0.0,false};
+        if (facingDn) return {"observer_back", 0.0,false};
+        return {"observer_top", rot, true};
+    case BlockType::Dropper:
+        if (!horiz) return {"dropper_front_vertical",  0.0,false};
+        return {"dropper_front",  rot, true};
+    case BlockType::Dispenser:
+        if (!horiz) return {"dispenser_front_vertical",0.0,false};
+        return {"dispenser_front", rot, true};
+    case BlockType::Hopper:
+        return {"hopper_top", 0.0, false};
+    case BlockType::TrappedChest: {
+        static QString chestTopKey;
+        if (chestTopKey.isEmpty()) {
+            BlockModel ref = BlockModelLoader::load("block/stone");
+            if (ref.isValid && !ref.elements.isEmpty()) {
+                for (const auto &elem : ref.elements) {
+                    for (const auto &face : elem.faces) {
+                        if (face.present && !face.texturePath.isEmpty()) {
+                            QString tp = face.texturePath;
+                            int i = tp.indexOf("/textures/");
+                            if (i >= 0) {
+                                chestTopKey = "@crop:" + tp.left(i) +
+                                    "/textures/entity/chest/trapped.png|14,19,14,14";
+                            }
+                            break;
+                        }
+                    }
+                    if (!chestTopKey.isEmpty()) break;
+                }
+            }
+        }
+        return {chestTopKey, rot, true};
+    }
+    default: {
+        const auto &meta = getBlockMeta(block.type);
+        const bool needRot = meta.hasDirection && horiz;
+        return {QString(meta.enumKey), needRot ? rot : 0.0,
+                meta.hasDirection && horiz};
+    }
+    }
+}
+
+
+QColor GridScene::dustColor(uint8_t power)
+{
+    const float t = static_cast<float>(power) / 15.0f;
+    return QColor(static_cast<int>(0x5C+t*(0xFF-0x5C)),
+                  static_cast<int>(t*0x50), 0);
+}
+QColor GridScene::sourceActiveColor() { return QColor(0xC8,0xFF,0x00,220); }
+
+QColor GridScene::modeOverlayColor(EditMode mode)
+{
+    switch (mode) {
+    case EditMode::Paint:    return QColor(0x26,0x8B,0xD2);
+    case EditMode::Select:   return QColor(0xE0,0x6C,0x3A);
+    case EditMode::Interact: return QColor(0x2A,0xA1,0x98);
+    }
+    return Qt::white;
+}
+
+
+void GridScene::drawRepeaterDelay(QPainter *painter,
+                                  const QRectF &cell,
+                                  const Block  &block) const
+{
+    if (block.type != BlockType::Repeater) return;
+
+    painter->save();
+
+    const uint8_t delayIndex = SimFlags::getRepeaterDelay(block.flags);
+    const uint8_t delayTicks = delayIndex + 1;
+    const bool    active     = (block.flags & SimFlags::ACTIVE) != 0;
+
+    constexpr double SQ  = 3.5;
+    constexpr double GAP = 1.5;
+
+    const QPointF cen = cell.center();
+    const bool    isNS = (block.facing == BlockFacing::North
+                       || block.facing == BlockFacing::South);
+
+    const double totalLen = delayTicks * SQ + (delayTicks - 1) * GAP;
+
+    QPointF origin;
+    double  stepX = 0, stepY = 0;
+
+    if (isNS) {
+        origin = QPointF(cen.x() - totalLen/2.0, cen.y() - SQ/2.0);
+        stepX = SQ + GAP; stepY = 0;
+    } else {
+        origin = QPointF(cen.x() - SQ/2.0, cen.y() - totalLen/2.0);
+        stepX = 0; stepY = SQ + GAP;
+    }
+
+    for (uint8_t i = 0; i < delayTicks; ++i)
+    {
+        const QRectF sq(origin.x() + i*stepX,
+                        origin.y() + i*stepY,
+                        SQ, SQ);
+
+        const bool isLast = (i == delayTicks - 1);
+        if (isLast)
+            painter->setBrush(active ? QColor(0xFF,0xCC,0x00)
+                                     : QColor(0xCC,0xCC,0x88));
+        else
+            painter->setBrush(active ? QColor(0x88,0x55,0x00)
+                                     : QColor(0x66,0x66,0x44));
+        painter->setPen(Qt::NoPen);
+        painter->drawRect(sq);
+    }
+
+    painter->setPen(QColor(0xFF,0xFF,0xFF,180));
+    painter->setFont(QFont("Arial", 5, QFont::Bold));
+    painter->drawText(
+        QRectF(cell.right()-13, cell.bottom()-9, 12, 8),
+        Qt::AlignRight | Qt::AlignBottom,
+        QString("%1t").arg(delayTicks));
+
+    painter->restore();
+}
+
+
+void GridScene::drawSimOverlay(QPainter *painter,
+                               const QRectF &cell,
+                               const Block  &block) const
+{
+    painter->save();
+    const bool active        = (block.flags & SimFlags::ACTIVE)         != 0;
+    const bool lit           = (block.flags & SimFlags::LIT)            != 0;
+    const bool strongPowered = (block.flags & SimFlags::STRONG_POWERED) != 0;
+
+    switch (block.type)
+    {
+    case BlockType::Lever:
+    case BlockType::StoneButton:
+    case BlockType::WoodButton:
+    case BlockType::StonePressurePlate:
+    case BlockType::WoodPressurePlate:
+    case BlockType::LightWeightedPressurePlate:
+    case BlockType::HeavyWeightedPressurePlate:
+        if (active) {
+            painter->setPen(QPen(sourceActiveColor(), 2.0));
+            painter->setBrush(Qt::NoBrush);
+            painter->drawRect(cell.adjusted(1,1,-1,-1));
+            painter->setBrush(sourceActiveColor());
+            painter->setPen(Qt::NoPen);
+            painter->drawEllipse(QPointF(cell.right()-5,cell.top()+5), 3, 3);
+        } else {
+            painter->setPen(QPen(QColor(0x88,0x88,0x88,120), 1.0));
+            painter->setBrush(Qt::NoBrush);
+            painter->drawRect(cell.adjusted(2,2,-2,-2));
+        }
+        break;
+
+    case BlockType::RedstoneLamp:
+        if (lit) {
+            painter->setBrush(QColor(0xFF,0xEE,0x44,80));
+            painter->setPen(Qt::NoPen);
+            painter->drawRect(cell);
+            painter->setPen(QPen(QColor(0xFF,0xEE,0x44,220), 2.0));
+            painter->setBrush(Qt::NoBrush);
+            painter->drawRect(cell.adjusted(1,1,-1,-1));
+            painter->setBrush(QColor(0xFF,0xFF,0x88));
+            painter->setPen(Qt::NoPen);
+            painter->drawEllipse(QPointF(cell.right()-5,cell.top()+5), 3, 3);
+        }
+        break;
+
+
+    case BlockType::RedstoneTorch:
+        if (active) {
+            painter->setBrush(QColor(0xFF, 0x80, 0x00, 45));
+            painter->setPen(Qt::NoPen);
+            painter->drawEllipse(cell.center(),
+                                 CELL_SIZE * 0.42, CELL_SIZE * 0.42);
+        }
+        break;
+
+    case BlockType::Repeater:
+        if (active) {
+            painter->setPen(QPen(QColor(0xFF,0xAA,0x00,200), 2.0));
+            const QPointF cen  = cell.center();
+            const double  half = CELL_SIZE * 0.35;
+            switch (block.facing) {
+            case BlockFacing::North:
+                painter->drawLine(QPointF(cen.x()-4,cen.y()-half),
+                                  QPointF(cen.x()+4,cen.y()-half)); break;
+            case BlockFacing::South:
+                painter->drawLine(QPointF(cen.x()-4,cen.y()+half),
+                                  QPointF(cen.x()+4,cen.y()+half)); break;
+            case BlockFacing::East:
+                painter->drawLine(QPointF(cen.x()+half,cen.y()-4),
+                                  QPointF(cen.x()+half,cen.y()+4)); break;
+            case BlockFacing::West:
+                painter->drawLine(QPointF(cen.x()-half,cen.y()-4),
+                                  QPointF(cen.x()-half,cen.y()+4)); break;
+            default: break;
+            }
+        }
+        drawRepeaterDelay(painter, cell, block);
+        break;
+
+    case BlockType::Comparator:
+    {
+        if (block.power > 0) {
+            painter->setBrush(dustColor(block.power));
+            painter->setPen(Qt::NoPen);
+            painter->drawEllipse(cell.center(), 3.0, 3.0);
+        }
+        const bool subtract = SimFlags::isSubtractMode(block.flags);
+        painter->setPen(QColor(0xFF, 0xFF, 0xFF, 180));
+        painter->setFont(QFont("Arial", 5, QFont::Bold));
+        painter->drawText(
+            QRectF(cell.right()-13, cell.bottom()-9, 12, 8),
+            Qt::AlignRight | Qt::AlignBottom,
+            subtract ? "-" : "=");
+        break;
+    }
+
+    case BlockType::IronDoor:
+    case BlockType::IronTrapdoor:
+    case BlockType::FenceGate:
+        if (lit) {
+            painter->setBrush(QColor(0x44,0xFF,0x44,50));
+            painter->setPen(Qt::NoPen);
+            painter->drawRect(cell);
+        }
+        break;
+
+    case BlockType::Piston:
+    case BlockType::StickyPiston:
+        if (lit) {
+            painter->setBrush(QColor(0xFF,0x44,0x44,220));
+            painter->setPen(Qt::NoPen);
+            painter->drawEllipse(QPointF(cell.right()-5,cell.bottom()-5), 3, 3);
+        }
+        break;
+
+    default:
+        if (strongPowered) {
+            painter->setPen(QPen(QColor(0x44,0xAA,0xFF,150), 1.5));
+            painter->setBrush(Qt::NoBrush);
+            painter->drawRect(cell.adjusted(2,2,-2,-2));
+        }
+        break;
+    }
+    painter->restore();
+}
+
+
+void GridScene::drawFlashOverlay(QPainter *painter,
+                                 const QRectF &cell,
+                                 int gx, int gz) const
+{
+    auto it = m_flashFrames.find(QPoint(gx, gz));
+    if (it == m_flashFrames.end() || it.value() <= 0) return;
+    const int alpha = static_cast<int>(
+        static_cast<float>(it.value()) / FLASH_FRAMES_INIT * 120.0f);
+    painter->save();
+    painter->setBrush(QColor(0xFF,0xFF,0xFF,alpha));
+    painter->setPen(Qt::NoPen);
+    painter->drawRect(cell);
+    painter->restore();
+}
+
+
+void GridScene::drawBlock(QPainter *painter,
+                          int gx, int gz,
+                          const Block &block) const
+{
+    const QRectF cell (gridToScene(gx, gz), QSizeF(CELL_SIZE, CELL_SIZE));
+    const QRectF inner = cell.adjusted(1, 1, -1, -1);
+
+    painter->save();
+
+
+    if (block.type == BlockType::RedstoneWire)
+    {
+        const auto conn  = getDustConnections(gx, gz);
+        const int  nConn = (conn.n?1:0)+(conn.s?1:0)+(conn.e?1:0)+(conn.w?1:0);
+
+        painter->fillRect(inner, QColor(0x20,0x05,0x05));
+        const QColor tint = dustColor(block.power);
+        const QPixmap lineNS = loadPixmap("redstone_dust_line0");
+        const QPixmap dot    = loadPixmap("redstone_dust_dot");
+
+        const QRectF halfN(inner.left(),                   inner.top(),
+                           inner.width(),                  inner.height()/2.0);
+        const QRectF halfS(inner.left(),                   inner.top()+inner.height()/2.0,
+                           inner.width(),                  inner.height()/2.0);
+        const QRectF halfE(inner.left()+inner.width()/2.0, inner.top(),
+                           inner.width()/2.0,              inner.height());
+        const QRectF halfW(inner.left(),                   inner.top(),
+                           inner.width()/2.0,              inner.height());
+
+        auto drawHalf = [&](const QRectF &clipRect, const QPixmap &pix,
+                            double rotateDeg = 0.0) {
+            if (pix.isNull()) return;
+            painter->save();
+            painter->setClipRect(clipRect);
+            if (!qFuzzyIsNull(rotateDeg)) {
+                painter->translate(cell.center());
+                painter->rotate(rotateDeg);
+                painter->translate(-cell.center());
+            }
+            drawTinted(painter, inner, pix, tint);
+            painter->restore();
+        };
+
+        if (nConn == 0) { drawTinted(painter, inner, dot, tint); }
+        else {
+            if (conn.n) drawHalf(halfN, lineNS);
+            if (conn.s) drawHalf(halfS, lineNS);
+            if (conn.e) drawHalf(halfE, lineNS, 90.0);
+            if (conn.w) drawHalf(halfW, lineNS, 90.0);
+            drawTinted(painter, inner, dot, tint);
+        }
+
+        if (block.power > 0) {
+            painter->save();
+            painter->setPen(block.power<=3 ? QColor(0xFF,0xCC,0x00)
+                                           : QColor(0xFF,0xFF,0xFF,160));
+            painter->setFont(QFont("Arial", 6, QFont::Bold));
+            painter->drawText(QRectF(cell.left()+1,cell.top()+1,10,10),
+                              Qt::AlignLeft|Qt::AlignTop,
+                              QString::number(block.power));
+            painter->restore();
+        }
+
+        painter->restore();
+        painter->save();
+        drawFlashOverlay(painter, cell, gx, gz);
+        painter->restore();
+        return;
+    }
+
+
+    const TexInfo info = getTopViewTex(block);
+    const QPixmap tex  = loadPixmap(info.key);
+
+    if (block.type == BlockType::RedstoneLamp) {
+        const bool lit = (block.flags & SimFlags::LIT) != 0;
+        painter->fillRect(inner, lit ? QColor(0xFF,0xEE,0x44)
+                                     : QColor(0x80,0x78,0x20));
+        if (!tex.isNull()) painter->drawPixmap(inner.toRect(), tex);
+    } else {
+        if (tex.isNull())
+            painter->fillRect(inner, fallbackColor(block.type));
+        else {
+            if (!qFuzzyIsNull(info.rotateDeg)) {
+                painter->translate(cell.center());
+                painter->rotate(info.rotateDeg);
+                painter->translate(-cell.center());
+            }
+            painter->drawPixmap(inner.toRect(), tex);
+        }
+    }
+
+    if (info.showArrow) {
+        painter->save();
+        painter->setPen(QPen(QColor(255,255,255,170), 1.0));
+        const QPointF cen = cell.center();
+        const double  r   = CELL_SIZE * 0.28;
+        const QPointF tip(cen.x(), cen.y()-r);
+        painter->drawLine(cen, tip);
+        painter->drawLine(tip, QPointF(tip.x()-2.5, tip.y()+3.5));
+        painter->drawLine(tip, QPointF(tip.x()+2.5, tip.y()+3.5));
+        painter->restore();
+    }
+
+    const auto &meta = getBlockMeta(block.type);
+    if (meta.canFaceVertically &&
+        (block.facing==BlockFacing::Up||block.facing==BlockFacing::Down)) {
+        painter->save();
+        painter->setPen(QColor(255,255,255,200));
+        painter->setFont(QFont("Arial", 7, QFont::Bold));
+        painter->drawText(QRectF(cell.right()-11,cell.top()+1,10,10),
+                          Qt::AlignCenter,
+                          block.facing==BlockFacing::Up?"↑":"↓");
+        painter->restore();
+    }
+
+    if (block.type == BlockType::Hopper)
+        drawHopperIndicator(painter, cell, block.facing);
+
+    painter->restore();
+    painter->save();
+    drawSimOverlay  (painter, cell, block);
+    drawFlashOverlay(painter, cell, gx, gz);
+    painter->restore();
+}
+
+
+void GridScene::drawHopperIndicator(QPainter *painter,
+                                    const QRectF &cell, BlockFacing facing) const
+{
+    painter->save();
+    const QColor arrowColor(0x44,0xEE,0x44,220);
+    painter->setPen(QPen(arrowColor, 1.5));
+    painter->setBrush(arrowColor);
+    const QPointF cen = cell.center();
+    if (facing == BlockFacing::Down) {
+        const double d = CELL_SIZE*0.12;
+        QPolygonF diamond;
+        diamond<<QPointF(cen.x(),   cen.y()-d)<<QPointF(cen.x()+d,cen.y())
+               <<QPointF(cen.x(),   cen.y()+d)<<QPointF(cen.x()-d,cen.y());
+        painter->drawPolygon(diamond);
+    } else {
+        const double off=CELL_SIZE*0.5*0.75, aw=CELL_SIZE*0.12, ah=CELL_SIZE*0.14;
+        QPolygonF arrow;
+        switch (facing) {
+        case BlockFacing::North:
+            arrow<<QPointF(cen.x(),   cen.y()-off-ah)
+                 <<QPointF(cen.x()-aw,cen.y()-off   )
+                 <<QPointF(cen.x()+aw,cen.y()-off   ); break;
+        case BlockFacing::South:
+            arrow<<QPointF(cen.x(),   cen.y()+off+ah)
+                 <<QPointF(cen.x()-aw,cen.y()+off   )
+                 <<QPointF(cen.x()+aw,cen.y()+off   ); break;
+        case BlockFacing::East:
+            arrow<<QPointF(cen.x()+off+ah,cen.y()   )
+                 <<QPointF(cen.x()+off,   cen.y()-aw)
+                 <<QPointF(cen.x()+off,   cen.y()+aw); break;
+        case BlockFacing::West:
+            arrow<<QPointF(cen.x()-off-ah,cen.y()   )
+                 <<QPointF(cen.x()-off,   cen.y()-aw)
+                 <<QPointF(cen.x()-off,   cen.y()+aw); break;
+        default: break;
+        }
+        if (!arrow.isEmpty()) painter->drawPolygon(arrow);
+    }
+    painter->restore();
+}
+
+void GridScene::drawSelectionHighlight(QPainter *painter, int gx, int gz) const
+{
+    const QRectF cell(gridToScene(gx,gz), QSizeF(CELL_SIZE,CELL_SIZE));
+    painter->save();
+    painter->setPen(QPen(QColor(0xE0,0x6C,0x3A), 2));
+    painter->setBrush(QColor(0xE0,0x6C,0x3A,40));
+    painter->drawRect(cell.adjusted(1,1,-1,-1));
+    painter->setPen(QPen(QColor(0xFF,0x90,0x50), 2));
+    const int cs=4; const QRectF r=cell.adjusted(1,1,-1,-1);
+    painter->drawLine(r.topLeft(),    r.topLeft()    +QPointF( cs, 0));
+    painter->drawLine(r.topLeft(),    r.topLeft()    +QPointF(  0,cs));
+    painter->drawLine(r.topRight(),   r.topRight()   +QPointF(-cs, 0));
+    painter->drawLine(r.topRight(),   r.topRight()   +QPointF(  0,cs));
+    painter->drawLine(r.bottomLeft(), r.bottomLeft() +QPointF( cs, 0));
+    painter->drawLine(r.bottomLeft(), r.bottomLeft() +QPointF(  0,-cs));
+    painter->drawLine(r.bottomRight(),r.bottomRight()+QPointF(-cs, 0));
+    painter->drawLine(r.bottomRight(),r.bottomRight()+QPointF(  0,-cs));
+    painter->restore();
+}
+
+GridScene::DustConn GridScene::getDustConnections(int gx, int gz) const
+{
+    DustConn c{false,false,false,false};
+    if (!m_world) return c;
+    c.n=canConnectDust(gx,gz-1); c.s=canConnectDust(gx,gz+1);
+    c.e=canConnectDust(gx+1,gz); c.w=canConnectDust(gx-1,gz);
+    return c;
+}
+
+bool GridScene::canConnectDust(int gx, int gz) const
+{
+    if (!m_world) return false;
+    const Block &b = m_world->getBlock(gx, m_currentLayer, gz);
+    if (b.isEmpty()) return false;
+    switch (b.type) {
+    case BlockType::RedstoneWire: case BlockType::RedstoneTorch:
+    case BlockType::RedstoneBlock:case BlockType::Repeater:
+    case BlockType::Comparator:   case BlockType::Observer:
+    case BlockType::Lever:        case BlockType::StoneButton:
+    case BlockType::WoodButton:   case BlockType::StonePressurePlate:
+    case BlockType::WoodPressurePlate:
+    case BlockType::LightWeightedPressurePlate:
+    case BlockType::HeavyWeightedPressurePlate:
+    case BlockType::TargetBlock:  case BlockType::Lectern:
+    case BlockType::RedstoneLamp: case BlockType::Dropper:
+    case BlockType::Dispenser:    case BlockType::Hopper:
+    case BlockType::TNT:          case BlockType::NoteBlock:
+    case BlockType::Stone:        case BlockType::Other:
+        return true;
+    default: return false;
+    }
+}
+
+void GridScene::drawTinted(QPainter *painter, const QRectF &rect,
+                           const QPixmap &pix, const QColor &tint) const
+{
+    if (pix.isNull()) return;
+    QPixmap tinted(pix.size());
+    tinted.fill(Qt::transparent);
+    { QPainter tp(&tinted);
+      tp.drawPixmap(0,0,pix);
+      tp.setCompositionMode(QPainter::CompositionMode_SourceIn);
+      tp.fillRect(tinted.rect(), tint); }
+    painter->drawPixmap(rect.toRect(), tinted);
+}
+
+
+QPixmap GridScene::loadPixmap(const QString &key, int size)
+{
+    static std::unordered_map<std::string, QPixmap> cache;
+    const std::string k = (key + "@" + QString::number(size)).toStdString();
+    auto it = cache.find(k);
+    if (it != cache.end()) return it->second;
+
+    QPixmap raw;
+    if (key.startsWith("@crop:")) {
+
+        QString rest = key.mid(6);
+        int sep = rest.lastIndexOf('|');
+        if (sep > 0) {
+            QStringList nums = rest.mid(sep + 1).split(',');
+            if (nums.size() == 4) {
+                QPixmap full(rest.left(sep));
+                if (!full.isNull())
+                    raw = full.copy(nums[0].toInt(), nums[1].toInt(),
+                                    nums[2].toInt(), nums[3].toInt());
+            }
+        }
+    } else if (QDir::isAbsolutePath(key)) {
+
+        raw.load(key);
+    } else {
+
+        raw.load(QString(":/textures/%1.png").arg(key));
+    }
+
+    QPixmap scaled;
+    if (!raw.isNull())
+        scaled = raw.scaled(size, size, Qt::IgnoreAspectRatio, Qt::FastTransformation);
+    cache[k] = scaled;
+    return scaled;
+}
+
+double GridScene::facingToAngle(BlockFacing f)
+{
+    switch(f){
+    case BlockFacing::North:return  0.0; case BlockFacing::East:return  90.0;
+    case BlockFacing::South:return 180.0; case BlockFacing::West:return 270.0;
+    default:return 0.0;
+    }
+}
+
+BlockFacing GridScene::rotateFacingCW(BlockFacing f)
+{
+    switch(f){
+    case BlockFacing::North:return BlockFacing::East;
+    case BlockFacing::East: return BlockFacing::South;
+    case BlockFacing::South:return BlockFacing::West;
+    case BlockFacing::West: return BlockFacing::Up;
+    case BlockFacing::Up:   return BlockFacing::Down;
+    case BlockFacing::Down: return BlockFacing::North;
+    default:return BlockFacing::North;
+    }
+}
+
+QColor GridScene::fallbackColor(BlockType type)
+{
+    switch(type){
+    case BlockType::RedstoneWire:  return QColor(0xCC,0x30,0x30);
+    case BlockType::RedstoneTorch: return QColor(0xFF,0x66,0x00);
+    case BlockType::RedstoneBlock: return QColor(0xAA,0x00,0x00);
+    case BlockType::Repeater:      return QColor(0xAA,0x88,0x44);
+    case BlockType::Comparator:    return QColor(0x88,0x44,0xAA);
+    case BlockType::Observer:      return QColor(0x66,0x66,0x88);
+    case BlockType::Piston:        return QColor(0x55,0x77,0xAA);
+    case BlockType::StickyPiston:  return QColor(0x44,0x99,0x66);
+    case BlockType::Dropper:       return QColor(0x55,0x55,0x88);
+    case BlockType::Dispenser:     return QColor(0x66,0x55,0x88);
+    case BlockType::Hopper:        return QColor(0x44,0x44,0x66);
+    case BlockType::TNT:           return QColor(0xCC,0x44,0x44);
+    case BlockType::RedstoneLamp:  return QColor(0x80,0x78,0x20);
+    case BlockType::Stone:         return QColor(0x66,0x66,0x66);
+    case BlockType::Glass:         return QColor(0x99,0xCC,0xDD);
+    case BlockType::Other:         return QColor(0x33,0x33,0x33);
+    default:                       return QColor(0x44,0x44,0x55);
+    }
+}

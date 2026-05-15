@@ -20,7 +20,6 @@ public:
         m_queue.push_back({coord, fireTick});
     }
 
-
     std::vector<VoxelCoord> pollDue(uint64_t currentTick)
     {
         std::vector<VoxelCoord> due;

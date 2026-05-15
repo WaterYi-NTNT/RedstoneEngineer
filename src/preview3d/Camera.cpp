@@ -1,12 +1,10 @@
 #include "Camera.h"
 #include <QtMath>
 
-
 Camera::Camera()
 {
     reset();
 }
-
 
 QQuaternion Camera::fromAzimuthElevation(float azDeg, float elDeg)
 {
@@ -23,19 +21,16 @@ void Camera::reset()
     m_orientation = fromAzimuthElevation(45.0f, 30.0f);
 }
 
-
 void Camera::orbit(float dYaw, float dPitch)
 {
 
     QQuaternion yawQ   = QQuaternion::fromAxisAndAngle(QVector3D(0, 1, 0), -dYaw);
-
 
     QVector3D   localX = m_orientation.rotatedVector(QVector3D(1, 0, 0));
     QQuaternion pitchQ = QQuaternion::fromAxisAndAngle(localX, -dPitch);
 
     m_orientation = (pitchQ * yawQ * m_orientation).normalized();
 }
-
 
 void Camera::pan(float dx, float dy)
 {
@@ -46,12 +41,10 @@ void Camera::pan(float dx, float dy)
     m_target += u * (dy * scale);
 }
 
-
 void Camera::zoom(float delta)
 {
     m_distance = qMax(1.5f, m_distance * qPow(0.9f, delta));
 }
-
 
 QVector3D Camera::rightVector() const
 {
@@ -67,13 +60,11 @@ QVector3D Camera::forwardVector() const
     return -m_orientation.rotatedVector(QVector3D(0, 0, 1)).normalized();
 }
 
-
 QVector3D Camera::position() const
 {
     QVector3D offset = m_orientation.rotatedVector(QVector3D(0, 0, m_distance));
     return m_target + offset;
 }
-
 
 QMatrix4x4 Camera::viewMatrix() const
 {

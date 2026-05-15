@@ -28,7 +28,6 @@ void GridView::setZoomRange(double minZoom, double maxZoom)
     m_maxZoom = maxZoom;
 }
 
-
 void GridView::wheelEvent(QWheelEvent *event)
 {
     const double delta = event->angleDelta().y();
@@ -51,7 +50,6 @@ void GridView::applyZoom(double factor, QPoint anchor)
     m_currentZoom = newZoom;
     emit zoomChanged(m_currentZoom);
 }
-
 
 void GridView::mousePressEvent(QMouseEvent *event)
 {
@@ -78,7 +76,6 @@ void GridView::mouseMoveEvent(QMouseEvent *event)
         return;
     }
 
-
     if (auto *gs = qobject_cast<GridScene *>(scene()))
     {
         const QPointF sp = mapToScene(event->pos());
@@ -100,7 +97,6 @@ void GridView::mouseReleaseEvent(QMouseEvent *event)
     }
     QGraphicsView::mouseReleaseEvent(event);
 }
-
 
 void GridView::keyPressEvent(QKeyEvent *event)
 {

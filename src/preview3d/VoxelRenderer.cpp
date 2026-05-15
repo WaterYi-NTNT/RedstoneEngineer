@@ -4,7 +4,6 @@
 #include <QOpenGLTexture>
 #include <QImage>
 
-
 static const char *VERT_SRC = R"glsl(
 #version 330 core
 layout(location=0) in vec3  aPos;

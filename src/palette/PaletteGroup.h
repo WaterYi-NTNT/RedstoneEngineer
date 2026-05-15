@@ -8,7 +8,6 @@ class QLabel;
 class QPushButton;
 class PaletteItem;
 
-
 class PaletteGroup : public QWidget
 {
     Q_OBJECT

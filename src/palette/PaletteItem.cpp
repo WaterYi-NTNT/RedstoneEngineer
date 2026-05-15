@@ -21,7 +21,6 @@ void PaletteItem::buildIcon()
 
     BlockModel bm = BlockModelLoader::load(bsr.modelName);
 
-
     IconPreRot preRot = ModelIconRenderer::suggestPreRot(m_type);
     m_icon = ModelIconRenderer::render(bm, ICON_SIZE, preRot);
 }

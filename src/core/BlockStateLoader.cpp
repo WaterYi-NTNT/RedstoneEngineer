@@ -26,7 +26,6 @@ QString BlockStateLoader::facingStr(BlockFacing f)
     return "north";
 }
 
-
 QHash<QString,QString> BlockStateLoader::parseKey(const QString &key)
 {
     QHash<QString,QString> props;
@@ -41,7 +40,6 @@ QHash<QString,QString> BlockStateLoader::parseKey(const QString &key)
     }
     return props;
 }
-
 
 BlockStateResult BlockStateLoader::staticResult(BlockType type)
 {
@@ -91,7 +89,6 @@ BlockStateResult BlockStateLoader::staticResult(BlockType type)
     return r;
 }
 
-
 static const char* blockstateId(BlockType type)
 {
     switch(type){
@@ -123,7 +120,6 @@ static const char* blockstateId(BlockType type)
     default:                               return nullptr;
     }
 }
-
 
 BlockStateResult BlockStateLoader::fromJsonWithQuery(const QString        &bsId,
                                                       const BlockStateQuery &query)
@@ -172,12 +168,10 @@ BlockStateResult BlockStateLoader::fromJsonWithQuery(const QString        &bsId,
         const QString &key = it.key();
         const QHash<QString,QString> props = parseKey(key);
 
-
         if(!key.isEmpty()){
             if(props.contains("facing") && props["facing"] != fs)
                 continue;
         }
-
 
         if(query.matchPowered  && props.contains("powered")
             && props["powered"]  != (query.powered  ? "true":"false")) continue;
@@ -201,7 +195,6 @@ BlockStateResult BlockStateLoader::fromJsonWithQuery(const QString        &bsId,
             && props["half"]     != query.half)  continue;
         if(query.matchHinge    && props.contains("hinge")
             && props["hinge"]    != query.hinge) continue;
-
 
         int score = 0;
 
@@ -234,11 +227,9 @@ BlockStateResult BlockStateLoader::fromJsonWithQuery(const QString        &bsId,
         if(!query.hinge.isEmpty() && props.contains("hinge"))
             score += (props["hinge"] == query.hinge) ? +2 : -1;
 
-
         score -= key.count(',');
 
         if(score <= bestScore) continue;
-
 
         QJsonObject entry = it.value().isArray()
             ? it.value().toArray().first().toObject()
@@ -260,7 +251,6 @@ BlockStateResult BlockStateLoader::fromJsonWithQuery(const QString        &bsId,
     return result;
 }
 
-
 BlockStateResult BlockStateLoader::fromJson(const QString &bsId,
                                              BlockFacing    facing,
                                              const QString &shape)
@@ -274,14 +264,12 @@ BlockStateResult BlockStateLoader::fromJson(const QString &bsId,
     return fromJsonWithQuery(bsId, q);
 }
 
-
 BlockStateResult BlockStateLoader::fromJsonWithExtra(const QString &bsId,
                                                       BlockFacing    facing,
                                                       const QString &extraCondition)
 {
     BlockStateQuery q;
     q.facing = facing;
-
 
     const int eq = extraCondition.indexOf('=');
     if(eq > 0){
@@ -295,24 +283,20 @@ BlockStateResult BlockStateLoader::fromJsonWithExtra(const QString &bsId,
     return fromJsonWithQuery(bsId, q);
 }
 
-
 BlockStateResult BlockStateLoader::getResultWithQuery(const QString        &bsId,
                                                        const BlockStateQuery &query)
 {
     BlockStateResult r = fromJsonWithQuery(bsId, query);
     if(r.isValid()) return r;
 
-
     BlockStateQuery fallback;
     fallback.facing = query.facing;
     return fromJsonWithQuery(bsId, fallback);
 }
 
-
 BlockStateResult BlockStateLoader::getResult(BlockType type, BlockFacing facing)
 {
     if(type == BlockType::Air) return {};
-
 
     switch(type){
     case BlockType::TrappedChest: {
@@ -325,7 +309,6 @@ BlockStateResult BlockStateLoader::getResult(BlockType type, BlockFacing facing)
         }
         return r;
     }
-
 
     case BlockType::Lever: {
         BlockStateQuery q;
@@ -342,7 +325,6 @@ BlockStateResult BlockStateLoader::getResult(BlockType type, BlockFacing facing)
         if(r.isValid()) return r;
         return staticResult(type);
     }
-
 
     case BlockType::StoneButton:
     case BlockType::WoodButton: {
@@ -374,7 +356,6 @@ BlockStateResult BlockStateLoader::getResult(BlockType type, BlockFacing facing)
     }
     return staticResult(type);
 }
-
 
 BlockStateResult BlockStateLoader::getResultWithShape(const QString &bsId,
                                                        BlockFacing    facing,

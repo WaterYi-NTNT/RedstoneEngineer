@@ -83,9 +83,9 @@ void GridScene::setEditMode(EditMode mode)
 
 void GridScene::keyPressEvent(QKeyEvent *event)
 {
-    // ── V：切换下层预览（原 Alt+V）────────────────────────
+    
     if (event->key() == Qt::Key_V
-     && !(event->modifiers() & Qt::AltModifier)    // 排除 Alt+V 被其他用途占用
+     && !(event->modifiers() & Qt::AltModifier)    
      && !(event->modifiers() & Qt::ControlModifier))
     {
         m_previewBelowLayer = !m_previewBelowLayer;
@@ -104,12 +104,12 @@ void GridScene::keyPressEvent(QKeyEvent *event)
         return;
 
     case Qt::Key_T:
-        // T 专职切换到交互模式，不与旋转冲突
+        
         setEditMode(EditMode::Interact);
         return;
 
     case Qt::Key_R:
-        // R 专职旋转：画笔模式旋转画笔，选择模式旋转选中方块
+        
         rotateCurrent();
         return;
 
@@ -348,7 +348,7 @@ void GridScene::drawBackground(QPainter *painter, const QRectF &rect)
     painter->drawLine(0,t,0,b);
     painter->drawLine(l,0,r,0);
 
-    // ── Alt+V 激活时绘制下层预览提示条 ──────────────────
+    
     if (m_previewBelowLayer) {
         painter->save();
         painter->setPen(Qt::NoPen);
@@ -364,14 +364,6 @@ void GridScene::drawBackground(QPainter *painter, const QRectF &rect)
     }
 }
 
-// ══════════════════════════════════════════════════════════
-//  drawForeground
-//
-//  渲染顺序：
-//    1. 若 m_previewBelowLayer 开启：先以 opacity=0.75 渲染下层 (y-1)
-//    2. 再以 opacity=1.0 渲染当前层（自然遮挡下层）
-//    3. 选择框高亮
-// ══════════════════════════════════════════════════════════
 void GridScene::drawForeground(QPainter *painter, const QRectF &rect)
 {
     if (!m_world) return;
@@ -381,7 +373,7 @@ void GridScene::drawForeground(QPainter *painter, const QRectF &rect)
     const int gxMax = static_cast<int>(std::ceil (rect.right() /CELL_SIZE)) + 1;
     const int gzMax = static_cast<int>(std::ceil (rect.bottom()/CELL_SIZE)) + 1;
 
-    // ── 步骤1：下层预览（opacity=0.75）────────────────────
+    
     if (m_previewBelowLayer
      && m_currentLayer - 1 >= VoxelWorld::LAYER_MIN)
     {
@@ -400,7 +392,7 @@ void GridScene::drawForeground(QPainter *painter, const QRectF &rect)
         painter->restore();
     }
 
-    // ── 步骤2：当前层（opacity=1.0，遮挡下层）────────────
+    
     painter->setOpacity(1.0);
     for (const auto &[coord, block] : m_world->allBlocks()) {
         if (coord.y != m_currentLayer) continue;
@@ -410,7 +402,7 @@ void GridScene::drawForeground(QPainter *painter, const QRectF &rect)
         drawBlock(painter, coord.x, coord.z, block, 1.0);
     }
 
-    // ── 步骤3：选择框高亮 ─────────────────────────────────
+    
     if (m_hasSelection && m_editMode == EditMode::Select)
         drawSelectionHighlight(painter, m_selX, m_selZ);
 }
@@ -960,25 +952,17 @@ void GridScene::drawFlashOverlay(QPainter *painter,
     painter->restore();
 }
 
-// ══════════════════════════════════════════════════════════
-//  drawBlock
-//
-//  opacity 参数由 drawForeground 传入：
-//    当前层 = 1.0，预览下层 = 0.75
-//  painter->setOpacity 已在 drawForeground 设置好，
-//  这里不重复设置，直接绘制即可。
-// ══════════════════════════════════════════════════════════
 void GridScene::drawBlock(QPainter *painter,
                           int gx, int gz,
                           const Block &block,
-                          double /*opacity*/) const
+                          double ) const
 {
     const QRectF cell (gridToScene(gx, gz), QSizeF(CELL_SIZE, CELL_SIZE));
     const QRectF inner = cell.adjusted(1, 1, -1, -1);
 
     painter->save();
 
-    // ── 红石粉 ────────────────────────────────────────────
+    
     if (block.type == BlockType::RedstoneWire)
     {
         const auto conn  = getDustConnections(gx, gz);
@@ -1021,9 +1005,9 @@ void GridScene::drawBlock(QPainter *painter,
             drawTinted(painter, inner, dot, tint);
         }
 
-        // ── 竖向连接指示：小三角箭头 ──────────────────────
-        // 上坡（实色）：当前层粉 → 上层粉
-        // 下坡（半透明）：当前层粉 → 下层粉
+        
+        
+        
         {
             const int y = m_currentLayer;
             painter->save();
@@ -1054,7 +1038,7 @@ void GridScene::drawBlock(QPainter *painter,
 
             for (const auto &d : dirs)
             {
-                // 上坡：当前格正上方透明 → 上层斜对角有粉
+                
                 Block above = m_world->getBlock(gx, y+1, gz);
                 if (RedstoneLogic::isTransparent(above.type)) {
                     Block tb = m_world->getBlock(gx+d.dx, y+1, gz+d.dz);
@@ -1067,7 +1051,7 @@ void GridScene::drawBlock(QPainter *painter,
                         painter->drawPolygon(tri);
                     }
                 }
-                // 下坡：水平相邻格透明 → 下层斜对角有粉
+                
                 Block side = m_world->getBlock(gx+d.dx, y, gz+d.dz);
                 if (RedstoneLogic::isTransparent(side.type)) {
                     Block tb = m_world->getBlock(gx+d.dx, y-1, gz+d.dz);
@@ -1102,7 +1086,7 @@ void GridScene::drawBlock(QPainter *painter,
         return;
     }
 
-    // ── 活塞本体 ──────────────────────────────────────────
+    
     if (block.type == BlockType::Piston
      || block.type == BlockType::StickyPiston)
     {
@@ -1164,7 +1148,7 @@ void GridScene::drawBlock(QPainter *painter,
         return;
     }
 
-    // ── 活塞臂 ────────────────────────────────────────────
+    
     if (block.type == BlockType::PistonHead)
     {
         painter->restore();
@@ -1198,7 +1182,7 @@ void GridScene::drawBlock(QPainter *painter,
         return;
     }
 
-    // ── 普通方块 ──────────────────────────────────────────
+    
     const TexInfo info = getTopViewTex(block);
     const QPixmap tex  = loadPixmap(info.key);
 
@@ -1322,13 +1306,13 @@ GridScene::DustConn GridScene::getDustConnections(int gx, int gz) const
 
     const int y = m_currentLayer;
 
-    // ── 同层连接 ──────────────────────────────────────────
+    
     c.n = canConnectDust(gx,   gz-1);
     c.s = canConnectDust(gx,   gz+1);
     c.e = canConnectDust(gx+1, gz  );
     c.w = canConnectDust(gx-1, gz  );
 
-    // ── 上坡连接：当前格正上方透明 → 上层斜对角有粉 ──────
+    
     {
         Block above = m_world->getBlock(gx, y+1, gz);
         if (RedstoneLogic::isTransparent(above.type)) {
@@ -1339,7 +1323,7 @@ GridScene::DustConn GridScene::getDustConnections(int gx, int gz) const
         }
     }
 
-    // ── 下坡连接：水平相邻格透明 → 下层斜对角有粉 ────────
+    
     if (!c.n) {
         if (RedstoneLogic::isTransparent(m_world->getBlock(gx,   y, gz-1).type))
             c.n = (m_world->getBlock(gx,   y-1, gz-1).type==BlockType::RedstoneWire);

@@ -4,18 +4,15 @@
 #include <QMatrix4x4>
 #include <QQuaternion>
 
-
 class Camera
 {
 public:
     Camera();
 
-
     void orbit (float dYaw, float dPitch);
     void pan   (float dx,   float dy);
     void zoom  (float delta);
     void reset ();
-
 
     QMatrix4x4 viewMatrix()         const;
     QMatrix4x4 projMatrix(float aspect) const;
@@ -23,7 +20,6 @@ public:
     QVector3D  upVector()           const;
     QVector3D  rightVector()        const;
     QVector3D  forwardVector()      const;
-
 
     void setTarget  (const QVector3D &t) { m_target   = t; }
     void setDistance(float d)            { m_distance = qMax(1.0f, d); }
@@ -39,7 +35,6 @@ private:
     float       m_distance;
     float       m_fov;
     QQuaternion m_orientation;
-
 
     static QQuaternion fromAzimuthElevation(float azDeg, float elDeg);
 };

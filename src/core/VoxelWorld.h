@@ -38,25 +38,19 @@ public:
 
     VoxelWorld() = default;
 
-
     Block  getBlock       (int x, int y, int z) const;
     void   setBlock       (int x, int y, int z, const Block &block);
     void   clearBlock     (int x, int y, int z);
     bool   hasBlock       (int x, int y, int z) const;
 
-
     Block *getBlockMutable(int x, int y, int z);
 
-
     void   notifyChange   (int x, int y, int z, const Block &block);
-
 
     void   clearAll();
     int    blockCount() const { return static_cast<int>(m_blocks.size()); }
 
-
     const BlockMap &allBlocks() const { return m_blocks; }
-
 
     void setChangeCallback(ChangeCallback cb) { m_onChange = std::move(cb); }
 

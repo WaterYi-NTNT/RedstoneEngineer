@@ -208,18 +208,6 @@ void VoxelMesh::appendFlatQuad(QHash<QString,int> &batchMap,
     }
 }
 
-// ══════════════════════════════════════════════════════════
-//  appendSlopedQuad
-//  绘制竖向爬坡的红石粉斜面：从当前格地面延伸到相邻格上一层地面
-//
-//  参数：
-//    bx0,bz0  = 当前格（下端）在世界空间的底角 x,z
-//    bx1,bz1  = 当前格（下端）在世界空间的顶角 x,z（宽度方向）
-//    tx0,tz0  = 目标格（上端）在世界空间的底角 x,z
-//    tx1,tz1  = 目标格（上端）在世界空间的顶角 x,z
-//    yBot     = 下端 y（当前格地面 + 偏移）
-//    yTop     = 上端 y（上方格地面 + 偏移）
-// ══════════════════════════════════════════════════════════
 void VoxelMesh::appendSlopedQuad(QHash<QString,int> &batchMap,
                                   const QString      &texPath,
                                   float bx0, float bz0,
@@ -241,21 +229,21 @@ void VoxelMesh::appendSlopedQuad(QHash<QString,int> &batchMap,
         batchMap.insert(batchKey, idx);
     }
 
-    // 4顶点：下端两个，上端两个
-    // 顺序：bl, br, tr, tl（逆时针，符合法线朝上）
+    
+    
     QVector3D pos[4] = {
-        {bx0, yBot, bz0},   // 下端左
-        {bx1, yBot, bz1},   // 下端右
-        {tx1, yTop, tz1},   // 上端右
-        {tx0, yTop, tz0},   // 上端左
+        {bx0, yBot, bz0},   
+        {bx1, yBot, bz1},   
+        {tx1, yTop, tz1},   
+        {tx0, yTop, tz0},   
     };
 
-    // UV：沿斜面方向 v=0（下端）→ v=1（上端），u=0-1（宽度）
+    
     static const float uvSlope[4][2] = {
         {0.f, 1.f}, {1.f, 1.f}, {1.f, 0.f}, {0.f, 0.f}
     };
 
-    // 法线：斜面法线（朝上倾斜）
+    
     QVector3D edge1 = pos[1] - pos[0];
     QVector3D edge2 = pos[3] - pos[0];
     QVector3D n = QVector3D::crossProduct(edge1, edge2).normalized();
@@ -288,15 +276,6 @@ bool VoxelMesh::isRedstoneConnectable(const VoxelWorld &w, int x, int y, int z)
     }
 }
 
-// ══════════════════════════════════════════════════════════
-//  appendRedstone
-//
-//  同层平面连接（原有逻辑）+ 竖向爬坡连接（新增）
-//
-//  竖向规则（与 SimEngine::tryPropagateVerticalDust 完全对称）：
-//    上坡：当前格正上方透明 → 向 (dx, +1, dz) 方向画斜面
-//    下坡：水平相邻格透明   → 向 (dx, -1, dz) 方向画斜面
-// ══════════════════════════════════════════════════════════
 void VoxelMesh::appendRedstone(QHash<QString,int> &batchMap,
                                 const VoxelWorld   &world,
                                 int x, int y, int z,
@@ -329,13 +308,13 @@ void VoxelMesh::appendRedstone(QHash<QString,int> &batchMap,
 
     const QVector3D tint = dustTint(power);
 
-    // ── 同层连接判断 ──────────────────────────────────────
+    
     bool N = isRedstoneConnectable(world, x,   y, z-1);
     bool S = isRedstoneConnectable(world, x,   y, z+1);
     bool E = isRedstoneConnectable(world, x+1, y, z  );
     bool W = isRedstoneConnectable(world, x-1, y, z  );
 
-    // ── 上坡连接判断：正上方透明 → 上层斜对角有粉 ────────
+    
     bool upN = false, upS = false, upE = false, upW = false;
     {
         Block above = world.getBlock(x, y+1, z);
@@ -351,7 +330,7 @@ void VoxelMesh::appendRedstone(QHash<QString,int> &batchMap,
     if(upE) E = true;
     if(upW) W = true;
 
-    // ── 下坡连接判断：水平相邻格透明 → 下层斜对角有粉 ────
+    
     bool dnN = false, dnS = false, dnE = false, dnW = false;
     if(!N){
         if(RedstoneLogic::isTransparent(world.getBlock(x,   y, z-1).type)){
@@ -395,8 +374,8 @@ void VoxelMesh::appendRedstone(QHash<QString,int> &batchMap,
         return;
     }
 
-    // ── 同层平面段 ────────────────────────────────────────
-    // 只画到格子中心（如果有上坡/下坡则另由斜面段覆盖边缘）
+    
+    
     if(N) appendFlatQuad(batchMap, lineTexPath,
                          cx-hw, fz,    cx+hw, cz,    fy, UV_NS, tint);
     if(S) appendFlatQuad(batchMap, lineTexPath,
@@ -410,16 +389,16 @@ void VoxelMesh::appendRedstone(QHash<QString,int> &batchMap,
                    cx-hw, cz-hw, cx+hw, cz+hw,
                    fy+0.002f, UV_DOT, tint);
 
-    // ── 上坡斜面段 ────────────────────────────────────────
-    // 斜面从当前格边缘（y）延伸到相邻上层格的对侧边缘（y+1）
+    
+    
     const float yBot = (float)y + 0.01f;
     const float yTop = (float)y + 1.01f;
 
     if(upN){
-        // 从 (cx±hw, fz) 斜向 (cx±hw, fz-1.0) 上层
+        
         appendSlopedQuad(batchMap, lineTexPath,
-                         cx-hw, fz,    cx+hw, fz,       // 下端（当前格北侧）
-                         cx-hw, fz-1.f,cx+hw, fz-1.f,   // 上端（北邻格南侧，y+1层）
+                         cx-hw, fz,    cx+hw, fz,       
+                         cx-hw, fz-1.f,cx+hw, fz-1.f,   
                          yBot, yTop, tint);
     }
     if(upS){
@@ -441,15 +420,15 @@ void VoxelMesh::appendRedstone(QHash<QString,int> &batchMap,
                          yBot, yTop, tint);
     }
 
-    // ── 下坡斜面段 ────────────────────────────────────────
-    // 斜面从当前格边缘（y）下降到相邻下层格的对侧边缘（y-1）
+    
+    
     const float yDnTop = (float)y + 0.01f;
     const float yDnBot = (float)y - 0.99f;
 
     if(dnN){
         appendSlopedQuad(batchMap, lineTexPath,
-                         cx+hw, fz,     cx-hw, fz,       // 下端在目标格（y-1层）
-                         cx+hw, fz-1.f, cx-hw, fz-1.f,   // 注意方向：从当前格往下
+                         cx+hw, fz,     cx-hw, fz,       
+                         cx+hw, fz-1.f, cx-hw, fz-1.f,   
                          yDnBot, yDnTop, tint);
     }
     if(dnS){

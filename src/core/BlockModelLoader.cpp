@@ -9,7 +9,6 @@
 QString                    BlockModelLoader::s_dataRoot;
 QHash<QString,BlockModel>  BlockModelLoader::s_cache;
 
-
 void BlockModelLoader::setDataPath(const QString &root)
 {
     s_dataRoot = root;
@@ -23,7 +22,6 @@ BlockModel BlockModelLoader::load(const QString &name)
     if (name.isEmpty()) return {};
     if (s_cache.contains(name)) return s_cache.value(name);
 
-
     if (BuiltinModels::isBuiltin(name)) {
         BlockModel bm = BuiltinModels::make(name);
         s_cache.insert(name, bm);
@@ -32,16 +30,13 @@ BlockModel BlockModelLoader::load(const QString &name)
 
     RawModel raw = loadRaw(name);
 
-
     for (int depth = 0; depth < 16 && !raw.parent.isEmpty(); ++depth) {
         QString parentName = raw.parent;
         raw.parent.clear();
 
-
         if (parentName.startsWith("minecraft:builtin/") ||
             parentName.startsWith("builtin/"))
             break;
-
 
         if (parentName.contains(':'))
             parentName = parentName.section(':', 1);
@@ -49,10 +44,8 @@ BlockModel BlockModelLoader::load(const QString &name)
         RawModel parentRaw = loadRaw(parentName);
         raw = mergeWithParent(raw, parentRaw);
 
-
         if (raw.hasElements) break;
     }
-
 
     resolveTextures(raw);
 
@@ -64,7 +57,6 @@ BlockModel BlockModelLoader::load(const QString &name)
     s_cache.insert(name, bm);
     return bm;
 }
-
 
 BlockModelLoader::RawModel BlockModelLoader::loadRaw(const QString &name)
 {
@@ -103,7 +95,6 @@ BlockModelLoader::RawModel BlockModelLoader::loadRaw(const QString &name)
     return raw;
 }
 
-
 BlockModelLoader::RawModel
 BlockModelLoader::mergeWithParent(const RawModel &child, const RawModel &parent)
 {
@@ -125,7 +116,6 @@ BlockModelLoader::mergeWithParent(const RawModel &child, const RawModel &parent)
 
     return merged;
 }
-
 
 void BlockModelLoader::resolveTextures(RawModel &m)
 {
@@ -170,7 +160,6 @@ void BlockModelLoader::resolveTextures(RawModel &m)
     }
 }
 
-
 ModelElement BlockModelLoader::parseElement(const QJsonObject         &obj,
                                              const QHash<QString,QString> &texMap)
 {
@@ -212,7 +201,6 @@ ModelElement BlockModelLoader::parseElement(const QJsonObject         &obj,
     return e;
 }
 
-
 ModelFace BlockModelLoader::parseFace(const QJsonObject         &obj,
                                        const QHash<QString,QString> &texMap)
 {
@@ -239,7 +227,6 @@ ModelFace BlockModelLoader::parseFace(const QJsonObject         &obj,
 
     return f;
 }
-
 
 QString BlockModelLoader::resolveTexturePath(const QString             &nameOrRef,
                                               const QHash<QString,QString> &texMap)

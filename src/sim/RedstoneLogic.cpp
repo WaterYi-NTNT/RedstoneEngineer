@@ -4,10 +4,6 @@
 #include <cstring>
 #include <cmath>
 
-// ══════════════════════════════════════════════════════════
-//  方向工具
-// ══════════════════════════════════════════════════════════
-
 VoxelCoord RedstoneLogic::facingOffset(BlockFacing f)
 {
     switch (f) {
@@ -54,10 +50,6 @@ std::pair<VoxelCoord,VoxelCoord> RedstoneLogic::sideOffsets(BlockFacing facing)
     }
 }
 
-// ══════════════════════════════════════════════════════════
-//  信号读取
-// ══════════════════════════════════════════════════════════
-
 int RedstoneLogic::getOutputPower(const Block &b)
 {
     return static_cast<int>(b.power);
@@ -90,10 +82,6 @@ uint8_t RedstoneLogic::getDustOutput(const Block &self,
     }
 }
 
-// ══════════════════════════════════════════════════════════
-//  逻辑求值入口
-// ══════════════════════════════════════════════════════════
-
 Block RedstoneLogic::evaluate(const Block &self,
                                const VoxelCoord &pos,
                                const VoxelWorld &world,
@@ -107,10 +95,6 @@ Block RedstoneLogic::evaluate(const Block &self,
     default:                       return self;
     }
 }
-
-// ══════════════════════════════════════════════════════════
-//  红石火把
-// ══════════════════════════════════════════════════════════
 
 Block RedstoneLogic::evalTorch(const Block &self,
                                 const VoxelCoord &pos,
@@ -133,10 +117,6 @@ Block RedstoneLogic::evalTorch(const Block &self,
     }
     return next;
 }
-
-// ══════════════════════════════════════════════════════════
-//  中继器
-// ══════════════════════════════════════════════════════════
 
 Block RedstoneLogic::evalRepeater(const Block &self,
                                    const VoxelCoord &pos,
@@ -165,10 +145,6 @@ Block RedstoneLogic::evalRepeater(const Block &self,
     }
     return next;
 }
-
-// ══════════════════════════════════════════════════════════
-//  比较器
-// ══════════════════════════════════════════════════════════
 
 Block RedstoneLogic::evalComparator(const Block &self,
                                      const VoxelCoord &pos,
@@ -201,10 +177,6 @@ Block RedstoneLogic::evalComparator(const Block &self,
     return next;
 }
 
-// ══════════════════════════════════════════════════════════
-//  观察者
-// ══════════════════════════════════════════════════════════
-
 Block RedstoneLogic::evalObserver(const Block &self,
                                    const VoxelCoord &pos,
                                    const VoxelWorld &world,
@@ -228,10 +200,6 @@ Block RedstoneLogic::evalObserver(const Block &self,
     return next;
 }
 
-// ══════════════════════════════════════════════════════════
-//  执行器
-// ══════════════════════════════════════════════════════════
-
 void RedstoneLogic::applyActuator(Block &self, int inputPower)
 {
     bool powered = (inputPower > 0);
@@ -249,10 +217,6 @@ void RedstoneLogic::applyActuator(Block &self, int inputPower)
         break;
     }
 }
-
-// ══════════════════════════════════════════════════════════
-//  中继器锁定
-// ══════════════════════════════════════════════════════════
 
 bool RedstoneLogic::isRepeaterLocked(const VoxelCoord &pos,
                                       BlockFacing facing,
@@ -283,11 +247,6 @@ bool RedstoneLogic::isRepeaterLocked(const VoxelCoord &pos,
     return false;
 }
 
-// ══════════════════════════════════════════════════════════
-//  P3：透明度表（红石粉竖向传播）
-//  只列举项目中确认存在的 BlockType
-// ══════════════════════════════════════════════════════════
-
 bool RedstoneLogic::isTransparent(BlockType t)
 {
     switch (t) {
@@ -310,10 +269,6 @@ bool RedstoneLogic::isTransparent(BlockType t)
         return false;
     }
 }
-
-// ══════════════════════════════════════════════════════════
-//  P4：充能铁轨工具
-// ══════════════════════════════════════════════════════════
 
 bool RedstoneLogic::canActivateRail(const Block &b)
 {

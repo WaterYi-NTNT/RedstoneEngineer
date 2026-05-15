@@ -42,7 +42,6 @@ private:
                     int faceIdx, const QVector3D &offset,
                     float rotXdeg, float rotYdeg);
 
-
     static QVector3D dustTint(uint8_t power);
 
     void appendRedstone(QHash<QString,int> &batchMap,

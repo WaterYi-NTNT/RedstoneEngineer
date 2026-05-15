@@ -7,7 +7,6 @@
 #include <cstring>
 #include <climits>
 
-// ── 静态常量 ──────────────────────────────────────────────
 const VoxelCoord SimEngine::s_neighbors6[6] = {
     { 0, 0,-1}, { 1, 0, 0}, { 0, 0, 1},
     {-1, 0, 0}, { 0, 1, 0}, { 0,-1, 0},
@@ -16,10 +15,6 @@ const VoxelCoord SimEngine::s_neighbors6[6] = {
 const VoxelCoord SimEngine::s_horiz4[4] = {
     { 0, 0,-1}, { 1, 0, 0}, { 0, 0, 1}, {-1, 0, 0},
 };
-
-// ══════════════════════════════════════════════════════════
-//  构造 / 生命周期
-// ══════════════════════════════════════════════════════════
 
 SimEngine::SimEngine(VoxelWorld *world, QObject *parent)
     : QObject(parent)
@@ -76,10 +71,6 @@ void SimEngine::scheduleSourceOff(int x, int y, int z, int delayTicks)
     m_scheduler.schedule({x, y, z}, m_tick + delayTicks);
 }
 
-// ══════════════════════════════════════════════════════════
-//  主循环
-// ══════════════════════════════════════════════════════════
-
 void SimEngine::stepOnce()
 {
     ++m_tick;
@@ -117,10 +108,6 @@ void SimEngine::refreshStatic()
     flushWriteBuffer();
     emit tickFinished(m_changedCoords);
 }
-
-// ══════════════════════════════════════════════════════════
-//  到期事件处理
-// ══════════════════════════════════════════════════════════
 
 void SimEngine::applyDueEvents(const std::vector<VoxelCoord> &due)
 {
@@ -166,10 +153,6 @@ void SimEngine::applyDueEvents(const std::vector<VoxelCoord> &due)
         }
     }
 }
-
-// ══════════════════════════════════════════════════════════
-//  观察者
-// ══════════════════════════════════════════════════════════
 
 void SimEngine::updateObservers()
 {
@@ -233,10 +216,6 @@ void SimEngine::takeObserverSnapshots()
     }
 }
 
-// ══════════════════════════════════════════════════════════
-//  中继器锁定
-// ══════════════════════════════════════════════════════════
-
 void SimEngine::updateRepeaterLocks()
 {
     for (const auto &[coord, block] : m_world->allBlocks())
@@ -276,10 +255,6 @@ void SimEngine::updateRepeaterLocks()
         writeBlock(coord, next);
     }
 }
-
-// ══════════════════════════════════════════════════════════
-//  逻辑更新调度
-// ══════════════════════════════════════════════════════════
 
 void SimEngine::scheduleLogicUpdates()
 {
@@ -334,10 +309,6 @@ void SimEngine::scheduleLogicUpdates()
     }
 }
 
-// ══════════════════════════════════════════════════════════
-//  P3：红石粉传播
-// ══════════════════════════════════════════════════════════
-
 void SimEngine::tryPropagateVerticalDust(
     const VoxelCoord &cur,
     uint8_t curPow,
@@ -347,7 +318,7 @@ void SimEngine::tryPropagateVerticalDust(
     if (curPow == 0) return;
     const uint8_t newPow = curPow - 1;
 
-    // ── 上坡：cur 上方透明 → 传到 (cur+horiz, y+1) ──────
+    
     {
         VoxelCoord above { cur.x,           cur.y + 1, cur.z           };
         VoxelCoord target{ cur.x + horiz.x, cur.y + 1, cur.z + horiz.z };
@@ -362,7 +333,7 @@ void SimEngine::tryPropagateVerticalDust(
         }
     }
 
-    // ── 下坡：水平相邻格透明 → 传到 (cur+horiz, y-1) ────
+    
     {
         VoxelCoord side  { cur.x + horiz.x, cur.y,     cur.z + horiz.z };
         VoxelCoord target{ cur.x + horiz.x, cur.y - 1, cur.z + horiz.z };
@@ -380,7 +351,7 @@ void SimEngine::tryPropagateVerticalDust(
 
 void SimEngine::propagateDust()
 {
-    // ── 先将所有粉清零 ────────────────────────────────────
+    
     for (auto &[coord, block] : m_world->allBlocks()) {
         if (block.type == BlockType::RedstoneWire) {
             Block b = block;
@@ -392,7 +363,7 @@ void SimEngine::propagateDust()
     using Entry = std::pair<VoxelCoord, uint8_t>;
     std::queue<Entry> q;
 
-    // ── 以所有非粉方块为种子播种 ─────────────────────────
+    
     auto seedFromBlock = [&](const VoxelCoord &sc, const Block &sb)
     {
         uint8_t out = RedstoneLogic::getDustOutput(sb, sc, *m_world);
@@ -403,7 +374,7 @@ void SimEngine::propagateDust()
             Block nb = getEffectiveBlock(nc);
             if (nb.type != BlockType::RedstoneWire) continue;
 
-            // 中继器/比较器只向 facing 方向输出
+            
             if (sb.type == BlockType::Repeater
              || sb.type == BlockType::Comparator)
             {
@@ -423,7 +394,7 @@ void SimEngine::propagateDust()
     for (auto &[coord, block] : m_world->allBlocks())
         seedFromBlock(coord, getEffectiveBlock(coord));
 
-    // ── BFS 展开：同层 + 竖向爬坡 ────────────────────────
+    
     while (!q.empty())
     {
         auto [cur, pow] = q.front(); q.pop();
@@ -431,7 +402,7 @@ void SimEngine::propagateDust()
         if (curB.power != pow) continue;
         if (pow == 0)          continue;
 
-        // 同层 6 邻居（原有逻辑）
+        
         for (const auto &d : s_neighbors6) {
             VoxelCoord nc{ cur.x+d.x, cur.y+d.y, cur.z+d.z };
             Block nb = getEffectiveBlock(nc);
@@ -444,35 +415,31 @@ void SimEngine::propagateDust()
             }
         }
 
-        // P3：竖向爬坡（4水平方向各检测上坡/下坡）
+        
         for (const auto &h : s_horiz4)
             tryPropagateVerticalDust(cur, pow, h, q);
     }
 }
 
-// ══════════════════════════════════════════════════════════
-//  P4：充能铁轨激活与链式传播
-// ══════════════════════════════════════════════════════════
-
 void SimEngine::propagatePoweredRails()
 {
     constexpr int CHAIN_MAX = 8;
 
-    // ── Step1：收集所有充能铁轨，标记直接有源者 ──────────
+    
     CoordMap<int> dist;
     std::queue<VoxelCoord> bfsQ;
 
     for (const auto &[coord, block] : m_world->allBlocks())
     {
         if (block.type != BlockType::PoweredRail) continue;
-        dist[coord] = INT_MAX;   // 默认未到达
+        dist[coord] = INT_MAX;   
 
-        // 检查 6 邻居是否存在直接激活源
+        
         bool directPower = false;
         for (const auto &d : s_neighbors6) {
             VoxelCoord nc{ coord.x+d.x, coord.y+d.y, coord.z+d.z };
             Block nb = getEffectiveBlock(nc);
-            // 排除另一个充能铁轨（避免互相喂电），由链式 BFS 处理
+            
             if (nb.type != BlockType::PoweredRail
              && RedstoneLogic::canActivateRail(nb)) {
                 directPower = true;
@@ -486,20 +453,20 @@ void SimEngine::propagatePoweredRails()
         }
     }
 
-    // ── Step2：BFS 链式传播，最多 CHAIN_MAX 格 ───────────
+    
     while (!bfsQ.empty())
     {
         VoxelCoord cur = bfsQ.front(); bfsQ.pop();
         int curDist = dist[cur];
         if (curDist >= CHAIN_MAX) continue;
 
-        for (const auto &d : s_horiz4)   // 链式只走水平方向
+        for (const auto &d : s_horiz4)   
         {
             VoxelCoord nc{ cur.x+d.x, cur.y, cur.z+d.z };
 
             auto it = dist.find(nc);
-            if (it == dist.end()) continue;           // 不是充能铁轨
-            if (it->second <= curDist + 1) continue;  // 已有更短路径
+            if (it == dist.end()) continue;           
+            if (it->second <= curDist + 1) continue;  
             if (!RedstoneLogic::areRailsConnected(cur, nc)) continue;
 
             it->second = curDist + 1;
@@ -507,7 +474,7 @@ void SimEngine::propagatePoweredRails()
         }
     }
 
-    // ── Step3：写入激活状态 ───────────────────────────────
+    
     for (const auto &[coord, d] : dist)
     {
         Block current = getEffectiveBlock(coord);
@@ -521,10 +488,6 @@ void SimEngine::propagatePoweredRails()
         writeBlock(coord, next);
     }
 }
-
-// ══════════════════════════════════════════════════════════
-//  执行器更新
-// ══════════════════════════════════════════════════════════
 
 void SimEngine::updateAllActuators(bool includePistons)
 {
@@ -562,10 +525,6 @@ void SimEngine::updateAllActuators(bool includePistons)
         }
     }
 }
-
-// ══════════════════════════════════════════════════════════
-//  活塞移动
-// ══════════════════════════════════════════════════════════
 
 bool SimEngine::isPistonMovable(const Block &block) const
 {
@@ -669,7 +628,7 @@ void SimEngine::executePistonMoves()
         m_pistonPrevLit[coord] = nowLit;
     }
 
-    // 清理已删除的活塞记录
+    
     auto it = m_pistonPrevLit.begin();
     while (it != m_pistonPrevLit.end()) {
         const Block &b = m_world->getBlock(
@@ -681,10 +640,6 @@ void SimEngine::executePistonMoves()
             ++it;
     }
 }
-
-// ══════════════════════════════════════════════════════════
-//  读写工具
-// ══════════════════════════════════════════════════════════
 
 Block SimEngine::getEffectiveBlock(const VoxelCoord &c) const
 {

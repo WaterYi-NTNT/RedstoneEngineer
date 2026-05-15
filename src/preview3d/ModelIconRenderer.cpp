@@ -6,7 +6,6 @@
 #include <QtMath>
 #include <algorithm>
 
-
 IconPreRot ModelIconRenderer::suggestPreRot(BlockType type)
 {
     switch(type){
@@ -30,12 +29,10 @@ IconPreRot ModelIconRenderer::suggestPreRot(BlockType type)
     case BlockType::TrappedChest:
         return {0.f, 180.f};
 
-
     default:
         return {0.f, 0.f};
     }
 }
-
 
 ModelIconRenderer::Pt2
 ModelIconRenderer::project(float mx, float my, float mz,
@@ -47,7 +44,6 @@ ModelIconRenderer::project(float mx, float my, float mz,
     return { cx + px, cy + py };
 }
 
-
 ModelIconRenderer::Pt2
 ModelIconRenderer::projectRotated(float mx, float my, float mz,
                                    IconPreRot preRot,
@@ -57,7 +53,6 @@ ModelIconRenderer::projectRotated(float mx, float my, float mz,
     float y = my - 8.f;
     float z = mz - 8.f;
 
-
     if(!qFuzzyIsNull(preRot.x)){
         float rad = qDegreesToRadians(preRot.x);
         float c = qCos(rad), s = qSin(rad);
@@ -65,7 +60,6 @@ ModelIconRenderer::projectRotated(float mx, float my, float mz,
         float nz =  y*s + z*c;
         y = ny; z = nz;
     }
-
 
     if(!qFuzzyIsNull(preRot.y)){
         float rad = qDegreesToRadians(preRot.y);
@@ -77,7 +71,6 @@ ModelIconRenderer::projectRotated(float mx, float my, float mz,
 
     return project(x + 8.f, y + 8.f, z + 8.f, scale, cx, cy);
 }
-
 
 static void applyPreRot(float &x, float &y, float &z, IconPreRot preRot)
 {
@@ -122,7 +115,6 @@ QImage ModelIconRenderer::loadTexture(const QString &path,
     cache.insert(path, img);
     return img;
 }
-
 
 void ModelIconRenderer::drawFace(QPainter &p,
                                   const ModelElement &elem, int fi,
@@ -183,13 +175,11 @@ void ModelIconRenderer::drawFace(QPainter &p,
         float W = subTex.width();
         float H = subTex.height();
 
-
         QPolygonF srcRect;
         srcRect << QPointF(0, 0)
                 << QPointF(W, 0)
                 << QPointF(W, H)
                 << QPointF(0, H);
-
 
         int faceRot = (face.rotation / 90) % 4;
         if(faceRot < 0) faceRot += 4;
@@ -201,9 +191,7 @@ void ModelIconRenderer::drawFace(QPainter &p,
             srcRect = rotSrc;
         }
 
-
         if(!qFuzzyIsNull(preRot.x) && (fi == FACE_EAST || fi == FACE_WEST)){
-
 
             int steps = (int)qRound(preRot.x / 90.f) % 4;
             if(steps < 0) steps += 4;
@@ -238,7 +226,6 @@ void ModelIconRenderer::drawFace(QPainter &p,
     p.drawPolygon(poly);
 }
 
-
 QImage ModelIconRenderer::render(const BlockModel &model, int size, IconPreRot preRot)
 {
     QImage img(size, size, QImage::Format_ARGB32_Premultiplied);
@@ -257,7 +244,6 @@ QImage ModelIconRenderer::render(const BlockModel &model, int size, IconPreRot p
                     texCache.insert(face.texturePath,
                                     loadTexture(face.texturePath, texCache));
 
-
     float minX=16,minY=16,minZ=16, maxX=0,maxY=0,maxZ=0;
     for(const auto &elem : model.elements){
         minX=qMin(minX,elem.from[0]); maxX=qMax(maxX,elem.to[0]);
@@ -271,13 +257,11 @@ QImage ModelIconRenderer::render(const BlockModel &model, int size, IconPreRot p
     if(qFuzzyIsNull(span)) span = 16.f;
     const float scale = (float)size * 0.80f / span * 16.f;
 
-
     float mcx=(minX+maxX)/2.f, mcy=(minY+maxY)/2.f, mcz=(minZ+maxZ)/2.f;
     applyPreRot(mcx, mcy, mcz, preRot);
     Pt2 centerProj = project(mcx, mcy, mcz, scale, 0, 0);
     float cx = (float)size*0.5f - centerProj.x;
     float cy = (float)size*0.5f - centerProj.y;
-
 
     struct FaceEntry {
         const ModelElement *elem;
@@ -291,11 +275,9 @@ QImage ModelIconRenderer::render(const BlockModel &model, int size, IconPreRot p
         for(int fi = 0; fi < 6; ++fi){
             if(!elem.faces[fi].present) continue;
 
-
             float fcx = (elem.from[0]+elem.to[0])/2.f;
             float fcy = (elem.from[1]+elem.to[1])/2.f;
             float fcz = (elem.from[2]+elem.to[2])/2.f;
-
 
             switch(fi){
             case FACE_UP:    fcy = elem.to[1];   break;
@@ -306,9 +288,7 @@ QImage ModelIconRenderer::render(const BlockModel &model, int size, IconPreRot p
             case FACE_EAST:  fcx = elem.to[0];    break;
             }
 
-
             applyPreRot(fcx, fcy, fcz, preRot);
-
 
             float depth = fcx + fcz - fcy * 0.f;
 
@@ -316,12 +296,10 @@ QImage ModelIconRenderer::render(const BlockModel &model, int size, IconPreRot p
         }
     }
 
-
     std::sort(faceList.begin(), faceList.end(),
               [](const FaceEntry &a, const FaceEntry &b){
                   return a.depth < b.depth;
               });
-
 
     for(const auto &fe : faceList)
         drawFace(p, *fe.elem, fe.fi, scale, cx, cy, texCache, preRot);

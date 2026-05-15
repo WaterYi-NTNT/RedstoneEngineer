@@ -5,7 +5,6 @@ enum class BlockType : uint8_t
 {
     Air = 0,
 
-
     Lever,
     StoneButton,
     WoodButton,
@@ -22,14 +21,12 @@ enum class BlockType : uint8_t
     TrappedChest,
     Lectern,
 
-
     RedstoneWire,
     RedstoneTorch,
     RedstoneBlock,
     Repeater,
     Comparator,
     Observer,
-
 
     Piston,
     StickyPiston,
@@ -45,13 +42,11 @@ enum class BlockType : uint8_t
     NoteBlock,
     PoweredRail,
 
-
     Stone,
     Glass,
     SlabTop,
     SlabBottom,
     Stair,
-
 
     Other,
 

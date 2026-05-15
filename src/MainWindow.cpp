@@ -21,6 +21,13 @@
 #include <QAction>
 #include <QActionGroup>
 #include <QVector>
+#include <QCloseEvent>
+#include <QMessageBox>
+#include <QFileDialog>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QFile>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -38,6 +45,215 @@ MainWindow::MainWindow(QWidget *parent)
     setupSimToolBar();
     setupStatusBar();
     setupSim();
+
+    setCurrentFile(QString());   
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    if (!confirmDiscard()) {
+        event->ignore();
+        return;
+    }
+    event->accept();
+}
+
+void MainWindow::setCurrentFile(const QString &path)
+{
+    m_currentFile = path;
+    setModified(false);
+
+    QString title = QStringLiteral("RedstoneEngineer  v0.1");
+    if (!path.isEmpty())
+        title = QFileInfo(path).fileName() + QStringLiteral(" — ") + title;
+    setWindowTitle(title);
+}
+
+void MainWindow::setModified(bool modified)
+{
+    m_modified = modified;
+    
+    QString t = windowTitle();
+    if (modified && !t.startsWith('*'))
+        setWindowTitle('*' + t);
+    else if (!modified && t.startsWith('*'))
+        setWindowTitle(t.mid(1));
+}
+
+bool MainWindow::confirmDiscard()
+{
+    if (!m_modified) return true;
+
+    const int ret = QMessageBox::warning(
+        this,
+        tr("未保存的改动"),
+        tr("当前电路有未保存的改动，是否保存？"),
+        QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel,
+        QMessageBox::Save);
+
+    if (ret == QMessageBox::Save) {
+        saveFile();
+        return !m_modified;   
+    }
+    if (ret == QMessageBox::Discard) return true;
+    return false;             
+}
+
+void MainWindow::newFile()
+{
+    if (!confirmDiscard()) return;
+
+    if (m_simEngine) { m_simEngine->stop(); m_simEngine->reset(); }
+    if (m_world)     m_world->clearAll();
+
+    if (m_gridScene)        m_gridScene->refresh();
+    if (m_voxelRenderer)    m_voxelRenderer->markDirty();
+    if (m_statusBlockLabel) m_statusBlockLabel->setText("方块数：0");
+    if (m_simTickLabel)     m_simTickLabel->setText("Tick: 0");
+    if (m_statusSimLabel)   m_statusSimLabel->setText("■ 已重置");
+
+    updateSimActions(false);
+    setCurrentFile(QString());
+}
+
+void MainWindow::openFile()
+{
+    if (!confirmDiscard()) return;
+
+    const QString path = QFileDialog::getOpenFileName(
+        this,
+        tr("打开电路文件"),
+        QString(),
+        tr("RedstoneEngineer 电路 (*.rse);;所有文件 (*)"));
+
+    if (path.isEmpty()) return;
+
+    if (!loadFromFile(path)) {
+        QMessageBox::critical(this, tr("打开失败"),
+                              tr("无法读取文件：\n%1").arg(path));
+        return;
+    }
+    setCurrentFile(path);
+}
+
+void MainWindow::saveFile()
+{
+    if (m_currentFile.isEmpty()) {
+        saveFileAs();
+        return;
+    }
+    if (!saveToFile(m_currentFile)) {
+        QMessageBox::critical(this, tr("保存失败"),
+                              tr("无法写入文件：\n%1").arg(m_currentFile));
+    }
+}
+
+void MainWindow::saveFileAs()
+{
+    const QString path = QFileDialog::getSaveFileName(
+        this,
+        tr("保存电路文件"),
+        m_currentFile.isEmpty()
+            ? QStringLiteral("untitled.rse")
+            : m_currentFile,
+        tr("RedstoneEngineer 电路 (*.rse);;所有文件 (*)"));
+
+    if (path.isEmpty()) return;
+
+    if (!saveToFile(path)) {
+        QMessageBox::critical(this, tr("保存失败"),
+                              tr("无法写入文件：\n%1").arg(path));
+        return;
+    }
+    setCurrentFile(path);
+}
+
+bool MainWindow::saveToFile(const QString &path)
+{
+    if (!m_world) return false;
+
+    QJsonObject root;
+    root["version"] = 1;
+    root["layer"]   = m_gridScene ? m_gridScene->currentLayer() : 0;
+
+    QJsonArray blocks;
+    for (const auto &[coord, block] : m_world->allBlocks()) {
+        if (block.isEmpty()) continue;
+        QJsonObject obj;
+        obj["x"]      = coord.x;
+        obj["y"]      = coord.y;
+        obj["z"]      = coord.z;
+        obj["type"]   = static_cast<int>(block.type);
+        obj["facing"] = static_cast<int>(block.facing);
+        obj["power"]  = static_cast<int>(block.power);
+        obj["flags"]  = static_cast<int>(block.flags);
+        blocks.append(obj);
+    }
+    root["blocks"] = blocks;
+
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+        return false;
+
+    file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    file.close();
+
+    setModified(false);
+    return true;
+}
+
+bool MainWindow::loadFromFile(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return false;
+
+    QJsonParseError err;
+    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &err);
+    file.close();
+
+    if (err.error != QJsonParseError::NoError || !doc.isObject())
+        return false;
+
+    const QJsonObject root = doc.object();
+    if (root["version"].toInt() != 1)
+        return false;
+
+    
+    if (m_simEngine) { m_simEngine->stop(); m_simEngine->reset(); }
+    if (m_world)     m_world->clearAll();
+
+    
+    const QJsonArray blocks = root["blocks"].toArray();
+    for (const QJsonValue &val : blocks) {
+        const QJsonObject obj = val.toObject();
+        Block b;
+        b.type   = static_cast<BlockType>  (obj["type"]  .toInt());
+        b.facing = static_cast<BlockFacing>(obj["facing"].toInt());
+        b.power  = static_cast<uint8_t>    (obj["power"] .toInt());
+        b.flags  = static_cast<uint8_t>    (obj["flags"] .toInt());
+        if (!b.isEmpty())
+            m_world->setBlock(obj["x"].toInt(),
+                              obj["y"].toInt(),
+                              obj["z"].toInt(), b);
+    }
+
+    
+    const int layer = root["layer"].toInt(0);
+    if (m_gridScene) {
+        m_gridScene->setCurrentLayer(layer);
+        m_gridScene->refresh();
+    }
+    if (m_layerSpinBox)     m_layerSpinBox->setValue(layer);
+    if (m_voxelRenderer)    m_voxelRenderer->markDirty();
+    if (m_statusBlockLabel && m_world)
+        m_statusBlockLabel->setText(
+            QString("方块数：%1").arg(m_world->blockCount()));
+    if (m_simTickLabel)   m_simTickLabel->setText("Tick: 0");
+    if (m_statusSimLabel) m_statusSimLabel->setText("■ 已重置");
+
+    updateSimActions(false);
+    return true;
 }
 
 void MainWindow::setupWorld()
@@ -162,11 +378,11 @@ void MainWindow::updateModeActions(GridScene::EditMode mode)
     if (!m_modeHintLabel) return;
     switch (mode) {
     case GridScene::EditMode::Paint:
-        m_modeHintLabel->setText("  ✏  左键放置  右键擦除  R 旋转画笔");     break;
+        m_modeHintLabel->setText("  ✏  左键放置  右键擦除  R 旋转画笔");    break;
     case GridScene::EditMode::Select:
-        m_modeHintLabel->setText("  🖱  左键选中方块  R 旋转选中方块");        break;
+        m_modeHintLabel->setText("  🖱  左键选中方块  R 旋转选中方块");       break;
     case GridScene::EditMode::Interact:
-        m_modeHintLabel->setText("  ⚡  左键触发信号源  右键循环中继器延迟");  break;
+        m_modeHintLabel->setText("  ⚡  左键触发信号源  右键循环中继器延迟"); break;
     }
 }
 
@@ -253,12 +469,26 @@ QFrame *MainWindow::makeSeparator()
 
 void MainWindow::setupLayout()
 {
+    
     QMenuBar *mb = new QMenuBar(this);
+
     QMenu *mFile = mb->addMenu("文件(&F)");
-    mFile->addAction("新建(&N)");
-    mFile->addAction("打开(&O)");
+    auto *actNew     = mFile->addAction("新建(&N)");
+    auto *actOpen    = mFile->addAction("打开(&O)");
+    auto *actSave    = mFile->addAction("保存(&S)");
+    auto *actSaveAs  = mFile->addAction("另存为(&A)...");
     mFile->addSeparator();
     mFile->addAction("退出(&Q)", qApp, &QApplication::quit);
+
+    actNew   ->setShortcut(QKeySequence::New);
+    actOpen  ->setShortcut(QKeySequence::Open);
+    actSave  ->setShortcut(QKeySequence::Save);
+    actSaveAs->setShortcut(QKeySequence::SaveAs);
+
+    connect(actNew,    &QAction::triggered, this, &MainWindow::newFile);
+    connect(actOpen,   &QAction::triggered, this, &MainWindow::openFile);
+    connect(actSave,   &QAction::triggered, this, &MainWindow::saveFile);
+    connect(actSaveAs, &QAction::triggered, this, &MainWindow::saveFileAs);
 
     QMenu *mView = mb->addMenu("视图(&V)");
     QAction *actResetCam = mView->addAction("重置 3D 视角 (F)");
@@ -267,7 +497,7 @@ void MainWindow::setupLayout()
     mb->addMenu("帮助(&H)")->addAction("关于");
     setMenuBar(mb);
 
-    // ── 调色盘（纯方块选择，无模式按钮）────────────────────
+    
     m_palette = new BlockPalette(this);
 
     connect(m_palette, &BlockPalette::blockSelected,
@@ -282,9 +512,8 @@ void MainWindow::setupLayout()
                     .arg(fnames[static_cast<int>(m_gridScene->currentFacing())]));
         }
     });
-    // ✅ 不再连接 palette 的 editModeChanged（该信号已删除）
 
-    // ── 2D 编辑区 ─────────────────────────────────────────
+    
     m_gridScene = new GridScene(m_world, this);
     m_gridView  = new GridView(this);
     m_gridView->setScene(m_gridScene);
@@ -322,7 +551,11 @@ void MainWindow::setupLayout()
                 .arg(fnames[static_cast<int>(b.facing)]));
     });
 
-    // ── 3D 预览 ───────────────────────────────────────────
+    
+    connect(m_gridScene, &GridScene::blockModified,
+            this, [this](int, int, int) { setModified(true); });
+
+    
     m_voxelRenderer = new VoxelRenderer(m_world, this);
     m_voxelRenderer->setMinimumWidth(300);
 
@@ -389,6 +622,7 @@ void MainWindow::setupToolBar()
         for (const auto &c : toErase)
             m_world->clearBlock(c.x, c.y, c.z);
         m_gridScene->refresh();
+        setModified(true);
     });
     m_editorToolBar->addAction(btnClear);
     m_editorToolBar->addSeparator();
@@ -433,7 +667,7 @@ void MainWindow::setupModeToolBar()
 
     m_actModeInteract = new QAction("⚡  交互", this);
     m_actModeInteract->setToolTip(
-        "交互模式：左键触发拉杆/按钮，右键切换元件状态  快捷键 T");
+        "交互模式：左键触发拉杆/按钮，右键循环中继器延迟  快捷键 T");
     m_actModeInteract->setCheckable(true);
     group->addAction(m_actModeInteract);
     connect(m_actModeInteract, &QAction::triggered, this, [this]() {
@@ -502,7 +736,6 @@ void MainWindow::setupSimToolBar()
 
     m_simToolBar->addSeparator();
 
-    // ✅ 快捷键提示：T 替换 R（交互模式），V 预览下层
     auto *simHint = new QLabel(
         "  Space 运行/暂停  Tab 单步  Q 绘制  E 选择  T 交互  R 旋转  V 预览下层", this);
     simHint->setStyleSheet("color:#666688; font-size:11px;");

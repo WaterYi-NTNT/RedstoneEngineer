@@ -1,7 +1,6 @@
 #include "BuiltinModels.h"
 #include "BlockModelLoader.h"
 
-
 static QString chestTexturePath(const QString &fileName)
 {
     static QString rootPrefix;
@@ -28,7 +27,6 @@ static QString chestTexturePath(const QString &fileName)
     return rootPrefix + "/textures/entity/chest/" + fileName;
 }
 
-
 static inline void setFacePx(ModelFace &f, const QString &tex,
                              float pxU0, float pxV0,
                              float pxU1, float pxV1,
@@ -43,7 +41,6 @@ static inline void setFacePx(ModelFace &f, const QString &tex,
     f.rotation = 0;
 }
 
-
 static BlockModel makeChest(const QString &textureFile)
 {
     BlockModel m;
@@ -55,7 +52,6 @@ static BlockModel makeChest(const QString &textureFile)
 
     m.isValid = true;
     m.elements.resize(3);
-
 
     {
         auto &e = m.elements[0];
@@ -73,7 +69,6 @@ static BlockModel makeChest(const QString &textureFile)
 
     }
 
-
     {
         auto &e = m.elements[1];
         e.from[0]=1;  e.from[1]=10; e.from[2]=1;
@@ -89,7 +84,6 @@ static BlockModel makeChest(const QString &textureFile)
         setFacePx(e.faces[FACE_EAST],  tex, 28, 14, 42, 19);
 
     }
-
 
     {
         auto &e = m.elements[2];
@@ -108,7 +102,6 @@ static BlockModel makeChest(const QString &textureFile)
 
     return m;
 }
-
 
 bool BuiltinModels::isBuiltin(const QString &modelName)
 {

@@ -13,7 +13,6 @@ PaletteGroup::PaletteGroup(const QString &title, QWidget *parent)
     m_mainLayout->setContentsMargins(0, 2, 0, 6);
     m_mainLayout->setSpacing(2);
 
-
     m_titleBtn = new QPushButton("▾  " + title, this);
     m_titleBtn->setFlat(true);
     m_titleBtn->setCheckable(false);
@@ -35,7 +34,6 @@ PaletteGroup::PaletteGroup(const QString &title, QWidget *parent)
     connect(m_titleBtn, &QPushButton::clicked, this, &PaletteGroup::toggleCollapse);
     m_mainLayout->addWidget(m_titleBtn);
 
-
     m_container  = new QWidget(this);
     m_gridLayout = new QGridLayout(m_container);
     m_gridLayout->setContentsMargins(4, 2, 4, 2);
@@ -53,10 +51,8 @@ void PaletteGroup::relayout(int containerWidth)
 {
     if (m_collapsed) return;
 
-
     for (auto *item : m_items)
         m_gridLayout->removeWidget(item);
-
 
     const int availWidth = qMax(containerWidth - 8, PaletteItem::ITEM_SIZE);
     const int cols       = qMax(1, availWidth / PaletteItem::ITEM_SIZE);
@@ -66,7 +62,6 @@ void PaletteGroup::relayout(int containerWidth)
         int col = i % cols;
         m_gridLayout->addWidget(m_items[i], row, col, Qt::AlignLeft | Qt::AlignTop);
     }
-
 
     for (int c = 0; c < cols; ++c)
         m_gridLayout->setColumnStretch(c, 0);
@@ -83,7 +78,6 @@ void PaletteGroup::toggleCollapse()
 {
     m_collapsed = !m_collapsed;
     m_container->setVisible(!m_collapsed);
-
 
     QString title = m_titleBtn->text();
     if (m_collapsed)

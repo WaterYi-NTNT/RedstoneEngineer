@@ -10,10 +10,8 @@ struct BlockStateResult {
     bool    isValid() const { return !modelName.isEmpty(); }
 };
 
-
 struct BlockStateQuery {
     BlockFacing facing       = BlockFacing::North;
-
 
     bool powered   = false;
     bool lit       = false;
@@ -21,16 +19,13 @@ struct BlockStateQuery {
     bool extended  = false;
     bool open      = false;
 
-
     int  repeaterDelay = 1;
-
 
     QString shape;
     QString face;
     QString mode;
     QString half;
     QString hinge;
-
 
     bool matchPowered   = false;
     bool matchLit       = false;
@@ -50,10 +45,8 @@ class BlockStateLoader
 public:
     static void setDataPath(const QString &root);
 
-
     static BlockStateResult getResult(BlockType   type,
                                       BlockFacing facing = BlockFacing::North);
-
 
     static BlockStateResult getResultWithQuery(const QString        &bsId,
                                                const BlockStateQuery &query);
@@ -72,10 +65,8 @@ private:
 
     static QHash<QString,QString> parseKey(const QString &key);
 
-
     static BlockStateResult fromJsonWithQuery(const QString        &bsId,
                                               const BlockStateQuery &query);
-
 
     static BlockStateResult fromJson         (const QString &bsId,
                                               BlockFacing    facing,

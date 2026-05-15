@@ -3,7 +3,6 @@
 #include <QVector>
 #include <QHash>
 
-
 enum FaceIndex { FACE_DOWN=0, FACE_UP, FACE_NORTH, FACE_SOUTH, FACE_WEST, FACE_EAST };
 
 struct ModelFace {
@@ -19,7 +18,6 @@ struct ModelElement {
     float from[3]       = {0,0,0};
     float to[3]         = {16,16,16};
     ModelFace faces[6];
-
 
     float rotOrigin[3]  = {8,8,8};
     int   rotAxis       = 1;

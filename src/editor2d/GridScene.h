@@ -20,40 +20,40 @@ class GridScene : public QGraphicsScene
 public:
     static constexpr int CELL_SIZE = 32;
 
-    // ── 编辑模式 ──────────────────────────────────────────
+    
     enum class EditMode { Paint, Select, Interact };
 
     explicit GridScene(VoxelWorld *world, QObject *parent = nullptr);
 
-    // ── 层控制 ────────────────────────────────────────────
+    
     void setCurrentLayer(int y);
     int  currentLayer()  const { return m_currentLayer; }
 
-    // ── 画笔状态（MainWindow 使用的名称） ─────────────────
+    
     void        setPaintType   (BlockType t)   { m_paintType   = t; }
     void        setPaintFacing (BlockFacing f)  { m_paintFacing = f; }
     BlockType   paintType()    const            { return m_paintType; }
     BlockFacing paintFacing()  const            { return m_paintFacing; }
 
-    // MainWindow 也用这组别名
+    
     void        setCurrentBlockType(BlockType t)    { setPaintType(t); }
     BlockType   currentBlockType()  const           { return paintType(); }
     BlockFacing currentFacing()     const           { return paintFacing(); }
 
-    // ── 编辑模式 ──────────────────────────────────────────
+    
     void     setEditMode(EditMode mode);
     EditMode editMode()  const { return m_editMode; }
 
-    // ── 其他控制 ──────────────────────────────────────────
+    
     void rotateCurrent();
     void refresh();
     void markSimChanged(const QVector<VoxelCoord> &changed);
 
-    // ── 坐标转换（GridView 需要访问） ─────────────────────
+    
     QPoint  sceneToGrid(const QPointF &p) const;
     QPointF gridToScene(int gx, int gz)   const;
 
-    // ── 静态工具 ──────────────────────────────────────────
+    
     static QColor      dustColor        (uint8_t power);
     static QColor      sourceActiveColor();
     static QColor      modeOverlayColor (EditMode mode);
@@ -80,7 +80,7 @@ protected:
     void drawForeground    (QPainter *painter, const QRectF &rect) override;
 
 private:
-    // ── 绘制 ──────────────────────────────────────────────
+    
     void drawBlock             (QPainter *painter, int gx, int gz,
                                 const Block &block,
                                 double opacity = 1.0) const;
@@ -100,7 +100,7 @@ private:
                                 const QPixmap &pix,
                                 const QColor &tint) const;
 
-    // ── 纹理工具 ──────────────────────────────────────────
+    
     struct TexInfo {
         QString key;
         double  rotateDeg = 0.0;
@@ -109,12 +109,12 @@ private:
     TexInfo getTopViewTex   (const Block &block) const;
     QString getStateTexPath (const Block &block, int faceIndex) const;
 
-    // ── 红石粉连接 ────────────────────────────────────────
+    
     struct DustConn { bool n, s, e, w; };
     DustConn getDustConnections(int gx, int gz) const;
     bool     canConnectDust   (int gx, int gz) const;
 
-    // ── 交互工具 ──────────────────────────────────────────
+    
     void paintCell    (const QPointF &scenePos, bool erase);
     void selectCell   (const QPointF &scenePos);
     void interactCell (const QPointF &scenePos);
@@ -123,7 +123,7 @@ private:
     bool isRepeater          (int gx, int gz) const;
     void cycleRepeaterDelay  (int gx, int gz);
 
-    // ── 成员变量 ──────────────────────────────────────────
+    
     VoxelWorld *m_world        = nullptr;
     int         m_currentLayer = 0;
 
@@ -136,10 +136,10 @@ private:
     bool m_hasSelection = false;
     int  m_selX = 0, m_selZ = 0;
 
-    // ── Alt+V 预览下层 ────────────────────────────────────
+    
     bool m_previewBelowLayer = false;
 
-    // ── 闪烁（QHash 替代 QMap，QPoint 在 Qt6 无 operator<）─
+    
     QTimer             *m_flashTimer = nullptr;
     QHash<QPoint, int>  m_flashFrames;
     static constexpr int FLASH_FRAMES_INIT = 6;

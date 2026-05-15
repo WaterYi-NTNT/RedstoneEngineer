@@ -64,7 +64,7 @@ void BlockPalette::setupGroups()
             const BlockMeta &meta = getBlockMeta(type);
             if (meta.group != def.group) continue;
 
-            // PistonHead 是运行时产生的方块，不出现在调色盘
+            
             if (type == BlockType::PistonHead) continue;
 
             auto *item = new PaletteItem(type, this);
@@ -79,7 +79,7 @@ void BlockPalette::setupGroups()
 
     relayoutAll();
 
-    // 默认选中石头
+    
     for (auto *grp : m_groups) {
         for (auto *item : grp->items()) {
             if (item->blockType() == BlockType::Stone) {

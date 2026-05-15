@@ -4,7 +4,6 @@
 #include <QHash>
 #include <QJsonObject>
 
-
 class BlockModelLoader
 {
 public:

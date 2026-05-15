@@ -4,7 +4,6 @@
 #include <QImage>
 #include <QHash>
 
-
 struct IconPreRot {
     float x = 0.f;
     float y = 0.f;

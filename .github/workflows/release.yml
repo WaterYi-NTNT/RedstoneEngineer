@@ -51,7 +51,24 @@ jobs:
         run: |
           mkdir release
           copy build\RedstoneEngineer.exe release\
+
           windeployqt --release release\RedstoneEngineer.exe
+
+          $mingwBin = (Get-Command mingw32-make.exe).Source | Split-Path
+          $dlls = @(
+            "libstdc++-6.dll",
+            "libgcc_s_seh-1.dll",
+            "libwinpthread-1.dll"
+          )
+          foreach ($dll in $dlls) {
+            $src = Join-Path $mingwBin $dll
+            if (Test-Path $src) {
+              copy $src release\
+              echo "Copied $dll"
+            } else {
+              echo "WARNING: $dll not found at $src"
+            }
+          }
 
       - name: Package
         run: |

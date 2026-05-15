@@ -209,7 +209,7 @@ void VoxelRenderer::loadTexture(const QString &path)
     if(path.isEmpty()||m_textures.contains(path)) return;
     QImage img(path);
     if(img.isNull()) return;
-    auto *tex=new QOpenGLTexture(img.flipped(Qt::Vertical));
+    auto *tex=new QOpenGLTexture(img.mirrored(Qt::Vertical));
     tex->setMinificationFilter(QOpenGLTexture::Nearest);
     tex->setMagnificationFilter(QOpenGLTexture::Nearest);
     tex->setWrapMode(QOpenGLTexture::Repeat);

@@ -1,4 +1,7 @@
 #include <QApplication>
+#include <QDir>
+#include <QStandardPaths>
+#include <QMessageBox>
 #include "MainWindow.h"
 #include "BlockModelLoader.h"
 #include "BlockStateLoader.h"
@@ -8,14 +11,37 @@ int main(int argc, char *argv[])
     BlockModelLoader::clearCache();
     QApplication app(argc, argv);
     app.setApplicationName("RedstoneEngineer");
+    
+    const QStringList candidates = {
+        QApplication::applicationDirPath() + "/data/1.21.1",
+        QApplication::applicationDirPath() + "/data",
+#ifdef QT_DEBUG
+        // 开发环境兜底，仅 Debug 构建生效
+        "E:/Code/RedstoneEngineer/data/1.21.1",
+#endif
+    };
 
-    const QString DATA_ROOT = "E:/Code/RedstoneEngineer/data/1.21.1";
-    BlockModelLoader::setDataPath(DATA_ROOT);
-    BlockStateLoader::setDataPath(DATA_ROOT);
+    QString dataRoot;
+    for (const QString &path : candidates) {
+        if (QDir(path).exists()) {
+            dataRoot = path;
+            break;
+        }
+    }
+
+    if (dataRoot.isEmpty()) {
+        QMessageBox::critical(
+            nullptr,
+            "数据目录缺失",
+            "找不到 Minecraft 数据目录（data/1.21.1）。\n"
+            "请将 data 文件夹放在程序同级目录下。");
+        return 1;
+    }
+
+    BlockModelLoader::setDataPath(dataRoot);
+    BlockStateLoader::setDataPath(dataRoot);
 
     MainWindow w;
-    w.setWindowTitle("RedstoneEngineer v0.1");
-    w.resize(1280, 800);
     w.show();
 
     return app.exec();

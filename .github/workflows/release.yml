@@ -50,6 +50,7 @@ jobs:
           mkdir release
           copy build\RedstoneEngineer.exe release\
           windeployqt --release release\RedstoneEngineer.exe
+          xcopy /E /I data release\data
 
       - name: Package
         run: |

@@ -51,9 +51,8 @@ set(PROJECT_SOURCES
     src/preview3d/ModelIconRenderer.h
     src/preview3d/ModelIconRenderer.cpp
 
-    # ✅ 新增：红石仿真模块
-    src/sim/SimFlags.h          # 纯头文件，无 .cpp
-    src/sim/TickScheduler.h     # 纯头文件，无 .cpp
+    src/sim/SimFlags.h
+    src/sim/TickScheduler.h
     src/sim/SimEngine.h
     src/sim/SimEngine.cpp
     src/sim/RedstoneLogic.h

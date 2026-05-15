@@ -3,7 +3,7 @@ name: Build and Release
 on:
   push:
     tags:
-      - 'v*'          # 推送 v0.1 / v1.0 等 tag 时触发
+      - 'v*'
 
 jobs:
   build-windows:
@@ -16,34 +16,48 @@ jobs:
       - name: Install Qt
         uses: jurplel/install-qt-action@v3
         with:
-          version: '6.11.0'
+          version: '6.7.2'
           host: 'windows'
           target: 'desktop'
           arch: 'win64_mingw'
-          tools: 'tools_mingw1310'
+          tools: 'tools_mingw1310_64'
+          cache: true
+
+      - name: Find MinGW
+        run: |
+          $mingw = Get-ChildItem "C:\Users\runneradmin\AppData\Local\aqt" -Recurse -Filter "mingw32-make.exe" | Select-Object -First 1
+          if (-not $mingw) {
+            $mingw = Get-ChildItem "D:\a" -Recurse -Filter "mingw32-make.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          echo "MINGW_PATH=$($mingw.DirectoryName)" >> $env:GITHUB_ENV
+          echo "Found MinGW at: $($mingw.DirectoryName)"
 
       - name: Configure CMake
-        run: cmake -B build -G "MinGW Makefiles"
-              -DCMAKE_BUILD_TYPE=Release
-              -DCMAKE_PREFIX_PATH=${{ env.Qt6_DIR }}
+        run: |
+          cmake -B build `
+            -G "MinGW Makefiles" `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_MAKE_PROGRAM="${{ env.MINGW_PATH }}\mingw32-make.exe"
 
       - name: Build
         run: cmake --build build --parallel
 
-      - name: Deploy Qt dependencies
+      - name: Deploy
         run: |
           mkdir release
           copy build\RedstoneEngineer.exe release\
-          windeployqt release\RedstoneEngineer.exe
+          windeployqt --release release\RedstoneEngineer.exe
 
       - name: Package
         run: |
           cd release
-          7z a ..\RedstoneEngineer-windows.zip *
+          7z a ..\RedstoneEngineer-${{ github.ref_name }}-windows.zip .
 
-      - name: Upload Release
+      - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: RedstoneEngineer-windows.zip
+          name: "RedstoneEngineer ${{ github.ref_name }}"
+          files: RedstoneEngineer-${{ github.ref_name }}-windows.zip
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

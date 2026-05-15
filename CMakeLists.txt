@@ -66,6 +66,13 @@ endif()
 
 qt_add_executable(RedstoneEngineer WIN32 ${PROJECT_SOURCES})
 
+add_custom_command(TARGET RedstoneEngineer POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/data"
+        "$<TARGET_FILE_DIR:RedstoneEngineer>/data"
+    COMMENT "Copying data directory to build output..."
+)
+
 target_link_libraries(RedstoneEngineer PRIVATE
     Qt6::Core Qt6::Gui Qt6::Widgets Qt6::OpenGLWidgets opengl32
 )

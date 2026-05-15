@@ -54,6 +54,8 @@ jobs:
 
           windeployqt --release release\RedstoneEngineer.exe
 
+          xcopy /E /I data release\data  
+
           $mingwBin = (Get-Command mingw32-make.exe).Source | Split-Path
           $dlls = @(
             "libstdc++-6.dll",

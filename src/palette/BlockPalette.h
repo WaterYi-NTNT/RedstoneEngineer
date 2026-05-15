@@ -1,11 +1,9 @@
 #pragma once
+#include "core/Block.h"
 #include <QWidget>
-#include <QVector>
-#include "Block.h"
+#include <QList>
 
 class QVBoxLayout;
-class QScrollArea;
-class QToolButton;
 class PaletteGroup;
 class PaletteItem;
 
@@ -13,32 +11,25 @@ class BlockPalette : public QWidget
 {
     Q_OBJECT
 public:
+    static constexpr int PALETTE_WIDTH = 220;
+
     explicit BlockPalette(QWidget *parent = nullptr);
-
-
-    static constexpr int PALETTE_WIDTH = 280;
 
     BlockType selectedType() const { return m_selectedType; }
 
 signals:
     void blockSelected(BlockType type);
-    void editModeChanged(bool isSelectMode);
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
 
 private:
-    void setupTopBar();
     void setupGroups();
-    void onItemClicked(BlockType type, PaletteItem *item);
     void relayoutAll();
+    void onItemClicked(BlockType type, PaletteItem *item);
 
-    QVBoxLayout           *m_contentLayout = nullptr;
-    QVector<PaletteGroup*> m_groups;
-
-    BlockType    m_selectedType = BlockType::Stone;
-    PaletteItem *m_selectedItem = nullptr;
-
-    QToolButton *m_btnPaint  = nullptr;
-    QToolButton *m_btnSelect = nullptr;
+    QVBoxLayout        *m_contentLayout = nullptr;
+    QList<PaletteGroup*> m_groups;
+    PaletteItem        *m_selectedItem  = nullptr;
+    BlockType           m_selectedType  = BlockType::Stone;
 };

@@ -3,8 +3,8 @@
 #include "core/BlockModelLoader.h"
 #include "core/BlockStateLoader.h"
 #include "sim/SimFlags.h"
+#include "sim/RedstoneLogic.h"
 #include <QtMath>
-
 
 static const QVector3D FACE_NORMALS[6] = {
     { 0,-1, 0}, { 0, 1, 0},
@@ -24,7 +24,6 @@ static float faceAO(int fi)
     default:         return 0.75f;
     }
 }
-
 
 static QVector3D rotAround(const QVector3D &v, const QVector3D &o,
                             int axis, float deg)
@@ -57,7 +56,6 @@ QVector3D VoxelMesh::rotateX(const QVector3D &v, const QVector3D &p, float deg)
     return {v.x(), p.y()+dy*c-dz*s, p.z()+dy*s+dz*c};
 }
 
-
 QVector3D VoxelMesh::dustTint(uint8_t power)
 {
     const float t = static_cast<float>(power) / 15.0f;
@@ -67,7 +65,6 @@ QVector3D VoxelMesh::dustTint(uint8_t power)
         0.00f
     );
 }
-
 
 void VoxelMesh::appendFace(int batchIdx, const ModelElement &elem,
                             int fi, const QVector3D &offset,
@@ -114,18 +111,26 @@ void VoxelMesh::appendFace(int batchIdx, const ModelElement &elem,
     if(!qFuzzyIsNull(rotYdeg)) for(auto &v:c) v = rotateY(v, pivot, rotYdeg);
     for(auto &v:c) v += offset;
 
-    float u0f=face.uv[0]/16.f, v0f=1.f-face.uv[1]/16.f;
-    float u1f=face.uv[2]/16.f, v1f=1.f-face.uv[3]/16.f;
-    QVector2D uvs[4]={{u0f,v0f},{u1f,v0f},{u1f,v1f},{u0f,v1f}};
+    const float u0_mc = face.uv[0]/16.f;
+    const float v0_mc = face.uv[1]/16.f;
+    const float u1_mc = face.uv[2]/16.f;
+    const float v1_mc = face.uv[3]/16.f;
 
-    if(face.rotation != 0){
-        float rad = qDegreesToRadians(-(float)face.rotation);
-        float cosR = qCos(rad), sinR = qSin(rad);
-        for(auto &uv:uvs){
-            float du=uv.x()-0.5f, dv=uv.y()-0.5f;
-            uv = {0.5f+du*cosR-dv*sinR, 0.5f+du*sinR+dv*cosR};
-        }
-    }
+    QVector2D mc[4] = {
+        {u0_mc, v0_mc},
+        {u1_mc, v0_mc},
+        {u1_mc, v1_mc},
+        {u0_mc, v1_mc},
+    };
+
+    const int steps = ((face.rotation / 90) % 4 + 4) % 4;
+    QVector2D mc_rot[4];
+    for(int i = 0; i < 4; i++)
+        mc_rot[i] = mc[(i + steps) % 4];
+
+    QVector2D uvs[4];
+    for(int i = 0; i < 4; i++)
+        uvs[i] = {mc_rot[i].x(), 1.f - mc_rot[i].y()};
 
     QVector3D n = FACE_NORMALS[fi];
     if(!qFuzzyIsNull(rotXdeg)) n = rotateX(n, {0,0,0}, rotXdeg);
@@ -143,7 +148,6 @@ void VoxelMesh::appendFace(int batchIdx, const ModelElement &elem,
         m_batches[batchIdx].vertices.append(vtx);
     }
 }
-
 
 void VoxelMesh::appendElement(QHash<QString,int> &batchMap,
                                const ModelElement &elem,
@@ -169,7 +173,6 @@ void VoxelMesh::appendElement(QHash<QString,int> &batchMap,
         appendFace(idx, elem, fi, blockOffset, rotXdeg, rotYdeg);
     }
 }
-
 
 void VoxelMesh::appendFlatQuad(QHash<QString,int> &batchMap,
                                 const QString      &texPath,
@@ -205,6 +208,69 @@ void VoxelMesh::appendFlatQuad(QHash<QString,int> &batchMap,
     }
 }
 
+// ══════════════════════════════════════════════════════════
+//  appendSlopedQuad
+//  绘制竖向爬坡的红石粉斜面：从当前格地面延伸到相邻格上一层地面
+//
+//  参数：
+//    bx0,bz0  = 当前格（下端）在世界空间的底角 x,z
+//    bx1,bz1  = 当前格（下端）在世界空间的顶角 x,z（宽度方向）
+//    tx0,tz0  = 目标格（上端）在世界空间的底角 x,z
+//    tx1,tz1  = 目标格（上端）在世界空间的顶角 x,z
+//    yBot     = 下端 y（当前格地面 + 偏移）
+//    yTop     = 上端 y（上方格地面 + 偏移）
+// ══════════════════════════════════════════════════════════
+void VoxelMesh::appendSlopedQuad(QHash<QString,int> &batchMap,
+                                  const QString      &texPath,
+                                  float bx0, float bz0,
+                                  float bx1, float bz1,
+                                  float tx0, float tz0,
+                                  float tx1, float tz1,
+                                  float yBot, float yTop,
+                                  const QVector3D    &tint)
+{
+    QString batchKey = texPath + QStringLiteral("|%1,%2,%3")
+        .arg(tint.x(),0,'f',2)
+        .arg(tint.y(),0,'f',2)
+        .arg(tint.z(),0,'f',2);
+
+    int idx = batchMap.value(batchKey, -1);
+    if(idx == -1){
+        m_batches.append(MeshBatch{texPath, {}, tint});
+        idx = m_batches.size() - 1;
+        batchMap.insert(batchKey, idx);
+    }
+
+    // 4顶点：下端两个，上端两个
+    // 顺序：bl, br, tr, tl（逆时针，符合法线朝上）
+    QVector3D pos[4] = {
+        {bx0, yBot, bz0},   // 下端左
+        {bx1, yBot, bz1},   // 下端右
+        {tx1, yTop, tz1},   // 上端右
+        {tx0, yTop, tz0},   // 上端左
+    };
+
+    // UV：沿斜面方向 v=0（下端）→ v=1（上端），u=0-1（宽度）
+    static const float uvSlope[4][2] = {
+        {0.f, 1.f}, {1.f, 1.f}, {1.f, 0.f}, {0.f, 0.f}
+    };
+
+    // 法线：斜面法线（朝上倾斜）
+    QVector3D edge1 = pos[1] - pos[0];
+    QVector3D edge2 = pos[3] - pos[0];
+    QVector3D n = QVector3D::crossProduct(edge1, edge2).normalized();
+    if(n.y() < 0) n = -n;
+
+    const int triIdx[6] = {0,1,2, 0,2,3};
+    for(int t : triIdx){
+        VoxelVertex vtx;
+        vtx.x=pos[t].x(); vtx.y=pos[t].y(); vtx.z=pos[t].z();
+        vtx.u=uvSlope[t][0]; vtx.v=uvSlope[t][1];
+        vtx.nx=n.x(); vtx.ny=n.y(); vtx.nz=n.z();
+        vtx.ao=0.90f;
+        m_batches[idx].vertices.append(vtx);
+    }
+}
 
 bool VoxelMesh::isRedstoneConnectable(const VoxelWorld &w, int x, int y, int z)
 {
@@ -222,7 +288,15 @@ bool VoxelMesh::isRedstoneConnectable(const VoxelWorld &w, int x, int y, int z)
     }
 }
 
-
+// ══════════════════════════════════════════════════════════
+//  appendRedstone
+//
+//  同层平面连接（原有逻辑）+ 竖向爬坡连接（新增）
+//
+//  竖向规则（与 SimEngine::tryPropagateVerticalDust 完全对称）：
+//    上坡：当前格正上方透明 → 向 (dx, +1, dz) 方向画斜面
+//    下坡：水平相邻格透明   → 向 (dx, -1, dz) 方向画斜面
+// ══════════════════════════════════════════════════════════
 void VoxelMesh::appendRedstone(QHash<QString,int> &batchMap,
                                 const VoxelWorld   &world,
                                 int x, int y, int z,
@@ -253,21 +327,65 @@ void VoxelMesh::appendRedstone(QHash<QString,int> &batchMap,
     }
     if(dotTexPath.isEmpty() || lineTexPath.isEmpty()) return;
 
-
     const QVector3D tint = dustTint(power);
 
-    bool N = isRedstoneConnectable(world,x,y,z-1);
-    bool S = isRedstoneConnectable(world,x,y,z+1);
-    bool E = isRedstoneConnectable(world,x+1,y,z);
-    bool W = isRedstoneConnectable(world,x-1,y,z);
+    // ── 同层连接判断 ──────────────────────────────────────
+    bool N = isRedstoneConnectable(world, x,   y, z-1);
+    bool S = isRedstoneConnectable(world, x,   y, z+1);
+    bool E = isRedstoneConnectable(world, x+1, y, z  );
+    bool W = isRedstoneConnectable(world, x-1, y, z  );
+
+    // ── 上坡连接判断：正上方透明 → 上层斜对角有粉 ────────
+    bool upN = false, upS = false, upE = false, upW = false;
+    {
+        Block above = world.getBlock(x, y+1, z);
+        if(RedstoneLogic::isTransparent(above.type)){
+            upN = (world.getBlock(x,   y+1, z-1).type == BlockType::RedstoneWire);
+            upS = (world.getBlock(x,   y+1, z+1).type == BlockType::RedstoneWire);
+            upE = (world.getBlock(x+1, y+1, z  ).type == BlockType::RedstoneWire);
+            upW = (world.getBlock(x-1, y+1, z  ).type == BlockType::RedstoneWire);
+        }
+    }
+    if(upN) N = true;
+    if(upS) S = true;
+    if(upE) E = true;
+    if(upW) W = true;
+
+    // ── 下坡连接判断：水平相邻格透明 → 下层斜对角有粉 ────
+    bool dnN = false, dnS = false, dnE = false, dnW = false;
+    if(!N){
+        if(RedstoneLogic::isTransparent(world.getBlock(x,   y, z-1).type)){
+            dnN = (world.getBlock(x,   y-1, z-1).type == BlockType::RedstoneWire);
+            if(dnN) N = true;
+        }
+    }
+    if(!S){
+        if(RedstoneLogic::isTransparent(world.getBlock(x,   y, z+1).type)){
+            dnS = (world.getBlock(x,   y-1, z+1).type == BlockType::RedstoneWire);
+            if(dnS) S = true;
+        }
+    }
+    if(!E){
+        if(RedstoneLogic::isTransparent(world.getBlock(x+1, y, z  ).type)){
+            dnE = (world.getBlock(x+1, y-1, z  ).type == BlockType::RedstoneWire);
+            if(dnE) E = true;
+        }
+    }
+    if(!W){
+        if(RedstoneLogic::isTransparent(world.getBlock(x-1, y, z  ).type)){
+            dnW = (world.getBlock(x-1, y-1, z  ).type == BlockType::RedstoneWire);
+            if(dnW) W = true;
+        }
+    }
+
     bool anyConnect = N||S||E||W;
 
     float fx=(float)x, fy=(float)y+0.01f, fz=(float)z;
-    float cx=fx+0.5f, cz=fz+0.5f;
+    float cx=fx+0.5f,  cz=fz+0.5f;
     const float hw=0.10f, dh=0.15f;
 
-    static const float UV_NS[4][2]={{0,0},{1,0},{1,1},{0,1}};
-    static const float UV_EW[4][2]={{0,1},{0,0},{1,0},{1,1}};
+    static const float UV_NS [4][2]={{0,0},{1,0},{1,1},{0,1}};
+    static const float UV_EW [4][2]={{0,1},{0,0},{1,0},{1,1}};
     static const float UV_DOT[4][2]={{0,0},{1,0},{1,1},{0,1}};
 
     if(!anyConnect){
@@ -277,6 +395,8 @@ void VoxelMesh::appendRedstone(QHash<QString,int> &batchMap,
         return;
     }
 
+    // ── 同层平面段 ────────────────────────────────────────
+    // 只画到格子中心（如果有上坡/下坡则另由斜面段覆盖边缘）
     if(N) appendFlatQuad(batchMap, lineTexPath,
                          cx-hw, fz,    cx+hw, cz,    fy, UV_NS, tint);
     if(S) appendFlatQuad(batchMap, lineTexPath,
@@ -289,8 +409,68 @@ void VoxelMesh::appendRedstone(QHash<QString,int> &batchMap,
     appendFlatQuad(batchMap, dotTexPath,
                    cx-hw, cz-hw, cx+hw, cz+hw,
                    fy+0.002f, UV_DOT, tint);
-}
 
+    // ── 上坡斜面段 ────────────────────────────────────────
+    // 斜面从当前格边缘（y）延伸到相邻上层格的对侧边缘（y+1）
+    const float yBot = (float)y + 0.01f;
+    const float yTop = (float)y + 1.01f;
+
+    if(upN){
+        // 从 (cx±hw, fz) 斜向 (cx±hw, fz-1.0) 上层
+        appendSlopedQuad(batchMap, lineTexPath,
+                         cx-hw, fz,    cx+hw, fz,       // 下端（当前格北侧）
+                         cx-hw, fz-1.f,cx+hw, fz-1.f,   // 上端（北邻格南侧，y+1层）
+                         yBot, yTop, tint);
+    }
+    if(upS){
+        appendSlopedQuad(batchMap, lineTexPath,
+                         cx+hw, fz+1.f, cx-hw, fz+1.f,
+                         cx+hw, fz+2.f, cx-hw, fz+2.f,
+                         yBot, yTop, tint);
+    }
+    if(upE){
+        appendSlopedQuad(batchMap, lineTexPath,
+                         fx+1.f, cz+hw, fx+1.f, cz-hw,
+                         fx+2.f, cz+hw, fx+2.f, cz-hw,
+                         yBot, yTop, tint);
+    }
+    if(upW){
+        appendSlopedQuad(batchMap, lineTexPath,
+                         fx,     cz-hw, fx,     cz+hw,
+                         fx-1.f, cz-hw, fx-1.f, cz+hw,
+                         yBot, yTop, tint);
+    }
+
+    // ── 下坡斜面段 ────────────────────────────────────────
+    // 斜面从当前格边缘（y）下降到相邻下层格的对侧边缘（y-1）
+    const float yDnTop = (float)y + 0.01f;
+    const float yDnBot = (float)y - 0.99f;
+
+    if(dnN){
+        appendSlopedQuad(batchMap, lineTexPath,
+                         cx+hw, fz,     cx-hw, fz,       // 下端在目标格（y-1层）
+                         cx+hw, fz-1.f, cx-hw, fz-1.f,   // 注意方向：从当前格往下
+                         yDnBot, yDnTop, tint);
+    }
+    if(dnS){
+        appendSlopedQuad(batchMap, lineTexPath,
+                         cx-hw, fz+1.f, cx+hw, fz+1.f,
+                         cx-hw, fz+2.f, cx+hw, fz+2.f,
+                         yDnBot, yDnTop, tint);
+    }
+    if(dnE){
+        appendSlopedQuad(batchMap, lineTexPath,
+                         fx+1.f, cz-hw, fx+1.f, cz+hw,
+                         fx+2.f, cz-hw, fx+2.f, cz+hw,
+                         yDnBot, yDnTop, tint);
+    }
+    if(dnW){
+        appendSlopedQuad(batchMap, lineTexPath,
+                         fx,     cz+hw, fx,     cz-hw,
+                         fx-1.f, cz+hw, fx-1.f, cz-hw,
+                         yDnBot, yDnTop, tint);
+    }
+}
 
 static void facingDir(BlockFacing f, int &dx, int &dz)
 {
@@ -393,7 +573,6 @@ QString VoxelMesh::railShape(const VoxelWorld &w,
     }
 }
 
-
 void VoxelMesh::rebuild(const VoxelWorld &world)
 {
     m_batches.clear();
@@ -406,12 +585,10 @@ void VoxelMesh::rebuild(const VoxelWorld &world)
         int x=coord.x, y=coord.y, z=coord.z;
         QVector3D offset((float)x, (float)y, (float)z);
 
-
         if(blk.type == BlockType::RedstoneWire){
             appendRedstone(batchMap, world, x, y, z, offset, blk.power);
             continue;
         }
-
 
         if(blk.type == BlockType::Stair){
             QString shape = stairShape(world, x, y, z, blk.facing);
@@ -427,7 +604,6 @@ void VoxelMesh::rebuild(const VoxelWorld &world)
             continue;
         }
 
-
         if(blk.type == BlockType::PoweredRail){
             QString shape = railShape(world, x, y, z, blk.facing);
             BlockStateResult bsr = BlockStateLoader::getResultWithShape(
@@ -442,17 +618,16 @@ void VoxelMesh::rebuild(const VoxelWorld &world)
             continue;
         }
 
-
         if(blk.type == BlockType::Repeater){
             const bool active = (blk.flags & SimFlags::ACTIVE) != 0;
             const bool locked = (blk.flags & SimFlags::LOCKED) != 0;
             const int  delay  = SimFlags::getRepeaterDelay(blk.flags) + 1;
 
             BlockStateQuery q;
-            q.facing       = blk.facing;
-            q.powered      = active;  q.matchPowered = true;
-            q.locked       = locked;  q.matchLocked  = true;
-            q.repeaterDelay= delay;   q.matchDelay   = true;
+            q.facing        = blk.facing;
+            q.powered       = active;  q.matchPowered = true;
+            q.locked        = locked;  q.matchLocked  = true;
+            q.repeaterDelay = delay;   q.matchDelay   = true;
 
             BlockStateResult bsr = BlockStateLoader::getResultWithQuery("repeater", q);
             if(!bsr.isValid()) bsr = BlockStateLoader::getResult(blk.type, blk.facing);
@@ -464,16 +639,14 @@ void VoxelMesh::rebuild(const VoxelWorld &world)
             continue;
         }
 
-
         if(blk.type == BlockType::Comparator){
             const bool active   = (blk.flags & SimFlags::ACTIVE) != 0;
             const bool subtract = SimFlags::isSubtractMode(blk.flags);
 
             BlockStateQuery q;
-            q.facing      = blk.facing;
-            q.powered     = active;             q.matchPowered = true;
-            q.mode        = subtract ? "subtract" : "compare";
-            q.matchMode   = true;
+            q.facing    = blk.facing;
+            q.powered   = active;                             q.matchPowered = true;
+            q.mode      = subtract ? "subtract" : "compare";  q.matchMode    = true;
 
             BlockStateResult bsr = BlockStateLoader::getResultWithQuery("comparator", q);
             if(!bsr.isValid()) bsr = BlockStateLoader::getResult(blk.type, blk.facing);
@@ -485,13 +658,12 @@ void VoxelMesh::rebuild(const VoxelWorld &world)
             continue;
         }
 
-
         if(blk.type == BlockType::RedstoneTorch){
             const bool lit = (blk.flags & SimFlags::ACTIVE) != 0;
 
             BlockStateQuery q;
-            q.facing   = blk.facing;
-            q.lit      = lit; q.matchLit = true;
+            q.facing = blk.facing;
+            q.lit    = lit; q.matchLit = true;
 
             BlockStateResult bsr = BlockStateLoader::getResultWithQuery(
                 "redstone_torch", q);
@@ -503,7 +675,6 @@ void VoxelMesh::rebuild(const VoxelWorld &world)
                 appendElement(batchMap, elem, offset, -bsr.rotX, -bsr.rotY);
             continue;
         }
-
 
         if(blk.type == BlockType::RedstoneLamp){
             const bool lit = (blk.flags & SimFlags::LIT) != 0;
@@ -522,13 +693,12 @@ void VoxelMesh::rebuild(const VoxelWorld &world)
             continue;
         }
 
-
         if(blk.type == BlockType::Lever){
             const bool active = (blk.flags & SimFlags::ACTIVE) != 0;
 
             BlockStateQuery q;
-            q.powered    = active; q.matchPowered = true;
-            q.matchFace  = true;
+            q.powered   = active; q.matchPowered = true;
+            q.matchFace = true;
             switch(blk.facing){
             case BlockFacing::Up:
                 q.face = "floor";   q.facing = BlockFacing::North; break;
@@ -548,7 +718,6 @@ void VoxelMesh::rebuild(const VoxelWorld &world)
             continue;
         }
 
-
         if(blk.type == BlockType::StoneButton
         || blk.type == BlockType::WoodButton){
             const bool active = (blk.flags & SimFlags::ACTIVE) != 0;
@@ -556,8 +725,8 @@ void VoxelMesh::rebuild(const VoxelWorld &world)
                                  ? "stone_button" : "oak_button";
 
             BlockStateQuery q;
-            q.powered    = active; q.matchPowered = true;
-            q.matchFace  = true;
+            q.powered   = active; q.matchPowered = true;
+            q.matchFace = true;
             switch(blk.facing){
             case BlockFacing::Up:
                 q.face = "floor";   q.facing = BlockFacing::North; break;
@@ -576,7 +745,6 @@ void VoxelMesh::rebuild(const VoxelWorld &world)
                 appendElement(batchMap, elem, offset, -bsr.rotX, -bsr.rotY);
             continue;
         }
-
 
         if(blk.type == BlockType::StonePressurePlate
         || blk.type == BlockType::WoodPressurePlate
@@ -599,20 +767,21 @@ void VoxelMesh::rebuild(const VoxelWorld &world)
             }
             if(bsName.isEmpty()) goto plain;
 
-            BlockStateQuery q;
-            q.facing     = blk.facing;
-            q.powered    = active; q.matchPowered = true;
+            {
+                BlockStateQuery q;
+                q.facing  = blk.facing;
+                q.powered = active; q.matchPowered = true;
 
-            BlockStateResult bsr = BlockStateLoader::getResultWithQuery(bsName, q);
-            if(!bsr.isValid()) bsr = BlockStateLoader::getResult(blk.type, blk.facing);
-            if(!bsr.isValid()) continue;
-            BlockModel model = BlockModelLoader::load(bsr.modelName);
-            if(!model.isValid || model.elements.isEmpty()) continue;
-            for(const auto &elem : model.elements)
-                appendElement(batchMap, elem, offset, -bsr.rotX, -bsr.rotY);
-            continue;
+                BlockStateResult bsr = BlockStateLoader::getResultWithQuery(bsName, q);
+                if(!bsr.isValid()) bsr = BlockStateLoader::getResult(blk.type, blk.facing);
+                if(!bsr.isValid()) continue;
+                BlockModel model = BlockModelLoader::load(bsr.modelName);
+                if(!model.isValid || model.elements.isEmpty()) continue;
+                for(const auto &elem : model.elements)
+                    appendElement(batchMap, elem, offset, -bsr.rotX, -bsr.rotY);
+                continue;
+            }
         }
-
 
         if(blk.type == BlockType::Piston
         || blk.type == BlockType::StickyPiston){
@@ -621,8 +790,8 @@ void VoxelMesh::rebuild(const VoxelWorld &world)
                              ? "piston" : "sticky_piston";
 
             BlockStateQuery q;
-            q.facing      = blk.facing;
-            q.extended    = extended; q.matchExtended = true;
+            q.facing   = blk.facing;
+            q.extended = extended; q.matchExtended = true;
 
             BlockStateResult bsr = BlockStateLoader::getResultWithQuery(
                 QString::fromLatin1(bsId), q);
@@ -635,14 +804,36 @@ void VoxelMesh::rebuild(const VoxelWorld &world)
             continue;
         }
 
+        if(blk.type == BlockType::PistonHead){
+            const bool sticky = (blk.flags & SimFlags::ACTIVE) != 0;
+            const QString modelName = sticky
+                ? QStringLiteral("block/piston_head_sticky")
+                : QStringLiteral("block/piston_head");
+
+            float rotX = 0.f, rotY = 0.f;
+            switch(blk.facing){
+            case BlockFacing::South: rotY = 180.f; break;
+            case BlockFacing::East:  rotY =  90.f; break;
+            case BlockFacing::West:  rotY = 270.f; break;
+            case BlockFacing::Up:    rotX = 270.f; break;
+            case BlockFacing::Down:  rotX =  90.f; break;
+            default: break;
+            }
+
+            BlockModel model = BlockModelLoader::load(modelName);
+            if(!model.isValid || model.elements.isEmpty()) continue;
+            for(const auto &elem : model.elements)
+                appendElement(batchMap, elem, offset, -rotX, -rotY);
+            continue;
+        }
 
         if(blk.type == BlockType::IronDoor){
             const bool open = (blk.flags & SimFlags::LIT) != 0;
 
             BlockStateQuery q;
-            q.facing   = blk.facing;
-            q.open     = open; q.matchOpen = true;
-            q.half     = "lower"; q.matchHalf = true;
+            q.facing = blk.facing;
+            q.open   = open; q.matchOpen = true;
+            q.half   = "lower"; q.matchHalf = true;
 
             BlockStateResult bsr = BlockStateLoader::getResultWithQuery("iron_door", q);
             if(!bsr.isValid()) bsr = BlockStateLoader::getResult(blk.type, blk.facing);
@@ -653,7 +844,6 @@ void VoxelMesh::rebuild(const VoxelWorld &world)
                 appendElement(batchMap, elem, offset, -bsr.rotX, -bsr.rotY);
             continue;
         }
-
 
         if(blk.type == BlockType::IronTrapdoor
         || blk.type == BlockType::FenceGate){
@@ -675,7 +865,6 @@ void VoxelMesh::rebuild(const VoxelWorld &world)
                 appendElement(batchMap, elem, offset, -bsr.rotX, -bsr.rotY);
             continue;
         }
-
 
         plain:
         {

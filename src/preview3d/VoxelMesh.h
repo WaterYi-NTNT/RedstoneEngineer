@@ -65,4 +65,13 @@ private:
 
     static QVector3D rotateY(const QVector3D &v, const QVector3D &pivot, float deg);
     static QVector3D rotateX(const QVector3D &v, const QVector3D &pivot, float deg);
+
+    void appendSlopedQuad(QHash<QString,int> &batchMap,
+                      const QString      &texPath,
+                      float bx0, float bz0,
+                      float bx1, float bz1,
+                      float tx0, float tz0,
+                      float tx1, float tz1,
+                      float yBot, float yTop,
+                      const QVector3D    &tint);
 };

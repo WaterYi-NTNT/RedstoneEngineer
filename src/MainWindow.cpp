@@ -22,7 +22,6 @@
 #include <QActionGroup>
 #include <QVector>
 
-
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
@@ -41,12 +40,10 @@ MainWindow::MainWindow(QWidget *parent)
     setupSim();
 }
 
-
 void MainWindow::setupWorld()
 {
     m_world = new VoxelWorld();
 }
-
 
 void MainWindow::setupSim()
 {
@@ -54,15 +51,12 @@ void MainWindow::setupSim()
 
     connect(m_gridScene, &GridScene::sourceInteracted,
             this, &MainWindow::onSourceInteracted);
-
     connect(m_simEngine, &SimEngine::tickFinished,
             this, &MainWindow::onTickFinished);
     connect(m_simEngine, &SimEngine::tickFinished,
             m_gridScene, &GridScene::markSimChanged);
 
-
     connect(m_actSimRun, &QAction::triggered, this, [this]() {
-
         const int tps      = m_simSpeedBox->value();
         const int interval = 1000 / tps;
         m_simEngine->start(interval);
@@ -72,13 +66,11 @@ void MainWindow::setupSim()
                 QString("● 运行中  %1 t/s").arg(tps));
     });
 
-
     connect(m_actSimPause, &QAction::triggered, this, [this]() {
         m_simEngine->stop();
         updateSimActions(false);
         if (m_statusSimLabel) m_statusSimLabel->setText("⏸ 已暂停");
     });
-
 
     connect(m_actSimStep, &QAction::triggered, this, [this]() {
         m_simEngine->stop();
@@ -89,7 +81,6 @@ void MainWindow::setupSim()
                 QString("⏭ 单步  Tick %1").arg(m_simEngine->currentTick()));
     });
 
-
     connect(m_actSimReset, &QAction::triggered, this, [this]() {
         m_simEngine->stop();
         m_simEngine->reset();
@@ -99,7 +90,6 @@ void MainWindow::setupSim()
         if (m_gridScene)      m_gridScene->update();
         if (m_voxelRenderer)  m_voxelRenderer->update();
     });
-
 
     connect(m_simSpeedBox, &QSpinBox::valueChanged, this, [this](int tps) {
         if (m_simEngine->isRunning()) {
@@ -113,21 +103,17 @@ void MainWindow::setupSim()
     updateSimActions(false);
 }
 
-
 void MainWindow::onTickFinished(const QVector<VoxelCoord> &changed)
 {
-
     if (m_simTickLabel)
         m_simTickLabel->setText(
             QString("Tick: %1").arg(m_simEngine->currentTick()));
-
 
     if (!changed.isEmpty()) {
         if (m_gridScene)     m_gridScene->update();
         if (m_voxelRenderer) m_voxelRenderer->markDirty();
     }
 }
-
 
 void MainWindow::onSourceInteracted(int x, int y, int z)
 {
@@ -157,11 +143,8 @@ void MainWindow::onSourceInteracted(int x, int y, int z)
     }
 
     if (m_simEngine->isRunning()) return;
-
-
     m_simEngine->refreshStatic();
 }
-
 
 void MainWindow::updateSimActions(bool running)
 {
@@ -169,7 +152,6 @@ void MainWindow::updateSimActions(bool running)
     if (m_actSimPause) m_actSimPause->setEnabled( running);
     if (m_actSimStep)  m_actSimStep ->setEnabled(!running);
 }
-
 
 void MainWindow::updateModeActions(GridScene::EditMode mode)
 {
@@ -180,14 +162,13 @@ void MainWindow::updateModeActions(GridScene::EditMode mode)
     if (!m_modeHintLabel) return;
     switch (mode) {
     case GridScene::EditMode::Paint:
-        m_modeHintLabel->setText("  ✏  左键放置  右键擦除  R旋转画笔");    break;
+        m_modeHintLabel->setText("  ✏  左键放置  右键擦除  R 旋转画笔");     break;
     case GridScene::EditMode::Select:
-        m_modeHintLabel->setText("  🖱  左键选中方块  R旋转选中方块");       break;
+        m_modeHintLabel->setText("  🖱  左键选中方块  R 旋转选中方块");        break;
     case GridScene::EditMode::Interact:
-        m_modeHintLabel->setText("  ⚡  左键触发信号源  右键循环中继器延迟"); break;
+        m_modeHintLabel->setText("  ⚡  左键触发信号源  右键循环中继器延迟");  break;
     }
 }
-
 
 void MainWindow::applyDarkTheme()
 {
@@ -262,7 +243,6 @@ void MainWindow::applyDarkTheme()
     )");
 }
 
-
 QFrame *MainWindow::makeSeparator()
 {
     auto *sep = new QFrame(this);
@@ -271,10 +251,8 @@ QFrame *MainWindow::makeSeparator()
     return sep;
 }
 
-
 void MainWindow::setupLayout()
 {
-
     QMenuBar *mb = new QMenuBar(this);
     QMenu *mFile = mb->addMenu("文件(&F)");
     mFile->addAction("新建(&N)");
@@ -289,7 +267,7 @@ void MainWindow::setupLayout()
     mb->addMenu("帮助(&H)")->addAction("关于");
     setMenuBar(mb);
 
-
+    // ── 调色盘（纯方块选择，无模式按钮）────────────────────
     m_palette = new BlockPalette(this);
 
     connect(m_palette, &BlockPalette::blockSelected,
@@ -304,15 +282,9 @@ void MainWindow::setupLayout()
                     .arg(fnames[static_cast<int>(m_gridScene->currentFacing())]));
         }
     });
+    // ✅ 不再连接 palette 的 editModeChanged（该信号已删除）
 
-    connect(m_palette, &BlockPalette::editModeChanged,
-            this, [this](bool isSelect) {
-        if (m_gridScene)
-            m_gridScene->setEditMode(isSelect ? GridScene::EditMode::Select
-                                              : GridScene::EditMode::Paint);
-    });
-
-
+    // ── 2D 编辑区 ─────────────────────────────────────────
     m_gridScene = new GridScene(m_world, this);
     m_gridView  = new GridView(this);
     m_gridView->setScene(m_gridScene);
@@ -339,7 +311,7 @@ void MainWindow::setupLayout()
     });
 
     connect(m_gridScene, &GridScene::selectionChanged,
-            this, [this](int x, int , int z, const Block &b) {
+            this, [this](int x, int, int z, const Block &b) {
         if (!m_statusCoordLabel) return;
         const auto &meta     = getBlockMeta(b.type);
         const char *fnames[] = {"北","东","南","西","上","下"};
@@ -350,7 +322,7 @@ void MainWindow::setupLayout()
                 .arg(fnames[static_cast<int>(b.facing)]));
     });
 
-
+    // ── 3D 预览 ───────────────────────────────────────────
     m_voxelRenderer = new VoxelRenderer(m_world, this);
     m_voxelRenderer->setMinimumWidth(300);
 
@@ -364,7 +336,6 @@ void MainWindow::setupLayout()
         });
     }
 
-
     m_splitter = new QSplitter(Qt::Horizontal, this);
     m_splitter->addWidget(m_palette);
     m_splitter->addWidget(m_gridView);
@@ -376,7 +347,6 @@ void MainWindow::setupLayout()
     m_splitter->setChildrenCollapsible(false);
     setCentralWidget(m_splitter);
 }
-
 
 void MainWindow::setupToolBar()
 {
@@ -428,7 +398,6 @@ void MainWindow::setupToolBar()
     m_editorToolBar->addWidget(m_brushLabel);
 }
 
-
 void MainWindow::setupModeToolBar()
 {
     m_modeToolBar = addToolBar("编辑模式");
@@ -444,7 +413,7 @@ void MainWindow::setupModeToolBar()
     group->setExclusive(true);
 
     m_actModePaint = new QAction("✏  绘制", this);
-    m_actModePaint->setToolTip("绘制模式：左键放置，右键擦除  快捷键 Q");
+    m_actModePaint->setToolTip("绘制模式：左键放置，右键擦除，R 旋转画笔  快捷键 Q");
     m_actModePaint->setCheckable(true);
     m_actModePaint->setChecked(true);
     group->addAction(m_actModePaint);
@@ -454,7 +423,7 @@ void MainWindow::setupModeToolBar()
     m_modeToolBar->addAction(m_actModePaint);
 
     m_actModeSelect = new QAction("🖱  选择", this);
-    m_actModeSelect->setToolTip("选择模式：左键选中，R旋转  快捷键 E");
+    m_actModeSelect->setToolTip("选择模式：左键选中，R 旋转选中方块  快捷键 E");
     m_actModeSelect->setCheckable(true);
     group->addAction(m_actModeSelect);
     connect(m_actModeSelect, &QAction::triggered, this, [this]() {
@@ -464,7 +433,7 @@ void MainWindow::setupModeToolBar()
 
     m_actModeInteract = new QAction("⚡  交互", this);
     m_actModeInteract->setToolTip(
-        "交互模式：左键触发拉杆/按钮，右键循环中继器延迟  快捷键 R");
+        "交互模式：左键触发拉杆/按钮，右键切换元件状态  快捷键 T");
     m_actModeInteract->setCheckable(true);
     group->addAction(m_actModeInteract);
     connect(m_actModeInteract, &QAction::triggered, this, [this]() {
@@ -474,14 +443,13 @@ void MainWindow::setupModeToolBar()
 
     m_modeToolBar->addSeparator();
 
-    m_modeHintLabel = new QLabel("  ✏  左键放置  右键擦除  R旋转画笔", this);
+    m_modeHintLabel = new QLabel("  ✏  左键放置  右键擦除  R 旋转画笔", this);
     m_modeHintLabel->setStyleSheet("color:#666688; font-size:11px;");
     m_modeToolBar->addWidget(m_modeHintLabel);
 
     connect(m_gridScene, &GridScene::editModeChanged,
             this, &MainWindow::updateModeActions);
 }
-
 
 void MainWindow::setupSimToolBar()
 {
@@ -516,7 +484,6 @@ void MainWindow::setupSimToolBar()
 
     m_simToolBar->addSeparator();
 
-
     m_simToolBar->addWidget(new QLabel("  速率：", this));
 
     m_simSpeedBox = new QSpinBox(this);
@@ -528,7 +495,6 @@ void MainWindow::setupSimToolBar()
 
     m_simToolBar->addSeparator();
 
-
     m_simTickLabel = new QLabel("  Tick: 0", this);
     m_simTickLabel->setStyleSheet(
         "color:#9CDCFE; font-family:monospace; font-size:12px; min-width:100px;");
@@ -536,12 +502,12 @@ void MainWindow::setupSimToolBar()
 
     m_simToolBar->addSeparator();
 
+    // ✅ 快捷键提示：T 替换 R（交互模式），V 预览下层
     auto *simHint = new QLabel(
-        "  Space 运行/暂停  Tab 单步  Q绘制  E选择  R交互", this);
+        "  Space 运行/暂停  Tab 单步  Q 绘制  E 选择  T 交互  R 旋转  V 预览下层", this);
     simHint->setStyleSheet("color:#666688; font-size:11px;");
     m_simToolBar->addWidget(simHint);
 }
-
 
 void MainWindow::setupStatusBar()
 {
@@ -569,7 +535,6 @@ void MainWindow::setupStatusBar()
     bar->addPermanentWidget(new QLabel(
         "RedstoneEngineer v0.1  |  Qt " QT_VERSION_STR "  ", this));
 }
-
 
 void MainWindow::onLayerChanged(int y)
 {

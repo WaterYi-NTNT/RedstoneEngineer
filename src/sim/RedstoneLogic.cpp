@@ -2,17 +2,21 @@
 #include "sim/SimFlags.h"
 #include <algorithm>
 #include <cstring>
+#include <cmath>
 
+// ══════════════════════════════════════════════════════════
+//  方向工具
+// ══════════════════════════════════════════════════════════
 
 VoxelCoord RedstoneLogic::facingOffset(BlockFacing f)
 {
     switch (f) {
-    case BlockFacing::North: return { 0, 0, -1};
-    case BlockFacing::South: return { 0, 0,  1};
-    case BlockFacing::East:  return { 1, 0,  0};
-    case BlockFacing::West:  return {-1, 0,  0};
-    case BlockFacing::Up:    return { 0, 1,  0};
-    case BlockFacing::Down:  return { 0,-1,  0};
+    case BlockFacing::North: return { 0, 0,-1};
+    case BlockFacing::South: return { 0, 0, 1};
+    case BlockFacing::East:  return { 1, 0, 0};
+    case BlockFacing::West:  return {-1, 0, 0};
+    case BlockFacing::Up:    return { 0, 1, 0};
+    case BlockFacing::Down:  return { 0,-1, 0};
     }
     return {};
 }
@@ -36,13 +40,7 @@ VoxelCoord RedstoneLogic::repeaterInputPos(const VoxelCoord &pos, BlockFacing f)
     return {pos.x + back.x, pos.y + back.y, pos.z + back.z};
 }
 
-int RedstoneLogic::getOutputPower(const Block &b)
-{
-    return static_cast<int>(b.power);
-}
-
-
-std::pair<VoxelCoord, VoxelCoord> RedstoneLogic::sideOffsets(BlockFacing facing)
+std::pair<VoxelCoord,VoxelCoord> RedstoneLogic::sideOffsets(BlockFacing facing)
 {
     switch (facing) {
     case BlockFacing::North:
@@ -56,43 +54,14 @@ std::pair<VoxelCoord, VoxelCoord> RedstoneLogic::sideOffsets(BlockFacing facing)
     }
 }
 
+// ══════════════════════════════════════════════════════════
+//  信号读取
+// ══════════════════════════════════════════════════════════
 
-bool RedstoneLogic::isRepeaterLocked(const VoxelCoord &pos,
-                                      BlockFacing       facing,
-                                      const VoxelWorld &world)
+int RedstoneLogic::getOutputPower(const Block &b)
 {
-    auto [sideA, sideB] = sideOffsets(facing);
-
-
-    {
-        VoxelCoord checkPos{ pos.x + sideA.x, pos.y, pos.z + sideA.z };
-        const Block &nb = world.getBlock(checkPos.x, checkPos.y, checkPos.z);
-        if (nb.type == BlockType::Repeater
-         && (nb.flags & SimFlags::ACTIVE))
-        {
-
-            VoxelCoord out = facingOffset(nb.facing);
-            if (out.x == -sideA.x && out.z == -sideA.z)
-                return true;
-        }
-    }
-
-
-    {
-        VoxelCoord checkPos{ pos.x + sideB.x, pos.y, pos.z + sideB.z };
-        const Block &nb = world.getBlock(checkPos.x, checkPos.y, checkPos.z);
-        if (nb.type == BlockType::Repeater
-         && (nb.flags & SimFlags::ACTIVE))
-        {
-            VoxelCoord out = facingOffset(nb.facing);
-            if (out.x == -sideB.x && out.z == -sideB.z)
-                return true;
-        }
-    }
-
-    return false;
+    return static_cast<int>(b.power);
 }
-
 
 uint8_t RedstoneLogic::getDustOutput(const Block &self,
                                      const VoxelCoord &,
@@ -121,6 +90,9 @@ uint8_t RedstoneLogic::getDustOutput(const Block &self,
     }
 }
 
+// ══════════════════════════════════════════════════════════
+//  逻辑求值入口
+// ══════════════════════════════════════════════════════════
 
 Block RedstoneLogic::evaluate(const Block &self,
                                const VoxelCoord &pos,
@@ -128,19 +100,17 @@ Block RedstoneLogic::evaluate(const Block &self,
                                uint64_t tick)
 {
     switch (self.type) {
-    case BlockType::RedstoneTorch:
-        return evalTorch(self, pos, world);
-    case BlockType::Repeater:
-        return evalRepeater(self, pos, world, tick);
-    case BlockType::Comparator:
-        return evalComparator(self, pos, world);
-    case BlockType::Observer:
-        return evalObserver(self, pos, world, tick);
-    default:
-        return self;
+    case BlockType::RedstoneTorch: return evalTorch     (self, pos, world);
+    case BlockType::Repeater:      return evalRepeater  (self, pos, world, tick);
+    case BlockType::Comparator:    return evalComparator(self, pos, world);
+    case BlockType::Observer:      return evalObserver  (self, pos, world, tick);
+    default:                       return self;
     }
 }
 
+// ══════════════════════════════════════════════════════════
+//  红石火把
+// ══════════════════════════════════════════════════════════
 
 Block RedstoneLogic::evalTorch(const Block &self,
                                 const VoxelCoord &pos,
@@ -158,17 +128,20 @@ Block RedstoneLogic::evalTorch(const Block &self,
         next.flags &= ~SimFlags::ACTIVE;
         next.power  = 0;
     } else {
-        next.flags |= SimFlags::ACTIVE;
+        next.flags |=  SimFlags::ACTIVE;
         next.power  = 15;
     }
     return next;
 }
 
+// ══════════════════════════════════════════════════════════
+//  中继器
+// ══════════════════════════════════════════════════════════
 
 Block RedstoneLogic::evalRepeater(const Block &self,
                                    const VoxelCoord &pos,
                                    const VoxelWorld &world,
-                                   uint64_t )
+                                   uint64_t)
 {
     if (self.flags & SimFlags::LOCKED)
         return self;
@@ -184,7 +157,7 @@ Block RedstoneLogic::evalRepeater(const Block &self,
 
     Block next = self;
     if (shouldActive) {
-        next.flags |= SimFlags::ACTIVE;
+        next.flags |=  SimFlags::ACTIVE;
         next.power  = 15;
     } else {
         next.flags &= ~SimFlags::ACTIVE;
@@ -193,8 +166,11 @@ Block RedstoneLogic::evalRepeater(const Block &self,
     return next;
 }
 
+// ══════════════════════════════════════════════════════════
+//  比较器
+// ══════════════════════════════════════════════════════════
 
-Block RedstoneLogic::evalComparator(const Block      &self,
+Block RedstoneLogic::evalComparator(const Block &self,
                                      const VoxelCoord &pos,
                                      const VoxelWorld &world)
 {
@@ -207,8 +183,8 @@ Block RedstoneLogic::evalComparator(const Block      &self,
     VoxelCoord leftOff  = rotCW(fwdOff);
     VoxelCoord rightOff = {-leftOff.x, leftOff.y, -leftOff.z};
 
-    Block leftB  = world.getBlock(pos.x+leftOff.x,  pos.y, pos.z+leftOff.z);
-    Block rightB = world.getBlock(pos.x+rightOff.x, pos.y, pos.z+rightOff.z);
+    Block leftB  = world.getBlock(pos.x + leftOff.x,  pos.y, pos.z + leftOff.z);
+    Block rightB = world.getBlock(pos.x + rightOff.x, pos.y, pos.z + rightOff.z);
     int sidePow  = std::max(leftB.power, rightB.power);
 
     int outPow = 0;
@@ -225,36 +201,14 @@ Block RedstoneLogic::evalComparator(const Block      &self,
     return next;
 }
 
+// ══════════════════════════════════════════════════════════
+//  观察者
+// ══════════════════════════════════════════════════════════
 
-void RedstoneLogic::applyActuator(Block &self, int inputPower)
-{
-    bool powered = (inputPower > 0);
-    switch (self.type) {
-    case BlockType::RedstoneLamp:
-        if (powered) self.flags |=  SimFlags::LIT;
-        else         self.flags &= ~SimFlags::LIT;
-        break;
-    case BlockType::IronDoor:
-    case BlockType::IronTrapdoor:
-    case BlockType::FenceGate:
-        if (powered) self.flags |=  SimFlags::LIT;
-        else         self.flags &= ~SimFlags::LIT;
-        break;
-    case BlockType::Piston:
-    case BlockType::StickyPiston:
-        if (powered) self.flags |=  SimFlags::LIT;
-        else         self.flags &= ~SimFlags::LIT;
-        break;
-    default:
-        break;
-    }
-}
-
-
-Block RedstoneLogic::evalObserver(const Block     &self,
+Block RedstoneLogic::evalObserver(const Block &self,
                                    const VoxelCoord &pos,
                                    const VoxelWorld &world,
-                                   uint64_t          )
+                                   uint64_t)
 {
     VoxelCoord backOffset = facingOffset(opposite(self.facing));
     VoxelCoord backPos    = { pos.x + backOffset.x,
@@ -265,11 +219,133 @@ Block RedstoneLogic::evalObserver(const Block     &self,
 
     Block next = self;
     if (changed) {
-        next.flags |= SimFlags::ACTIVE;
+        next.flags |=  SimFlags::ACTIVE;
         next.power  = 15;
     } else {
         next.flags &= ~SimFlags::ACTIVE;
         next.power  = 0;
     }
     return next;
+}
+
+// ══════════════════════════════════════════════════════════
+//  执行器
+// ══════════════════════════════════════════════════════════
+
+void RedstoneLogic::applyActuator(Block &self, int inputPower)
+{
+    bool powered = (inputPower > 0);
+    switch (self.type) {
+    case BlockType::RedstoneLamp:
+    case BlockType::IronDoor:
+    case BlockType::IronTrapdoor:
+    case BlockType::FenceGate:
+    case BlockType::Piston:
+    case BlockType::StickyPiston:
+        if (powered) self.flags |=  SimFlags::LIT;
+        else         self.flags &= ~SimFlags::LIT;
+        break;
+    default:
+        break;
+    }
+}
+
+// ══════════════════════════════════════════════════════════
+//  中继器锁定
+// ══════════════════════════════════════════════════════════
+
+bool RedstoneLogic::isRepeaterLocked(const VoxelCoord &pos,
+                                      BlockFacing facing,
+                                      const VoxelWorld &world)
+{
+    auto [sideA, sideB] = sideOffsets(facing);
+
+    {
+        VoxelCoord checkPos{ pos.x + sideA.x, pos.y, pos.z + sideA.z };
+        const Block &nb = world.getBlock(checkPos.x, checkPos.y, checkPos.z);
+        if (nb.type == BlockType::Repeater && (nb.flags & SimFlags::ACTIVE)) {
+            VoxelCoord out = facingOffset(nb.facing);
+            if (out.x == -sideA.x && out.z == -sideA.z)
+                return true;
+        }
+    }
+
+    {
+        VoxelCoord checkPos{ pos.x + sideB.x, pos.y, pos.z + sideB.z };
+        const Block &nb = world.getBlock(checkPos.x, checkPos.y, checkPos.z);
+        if (nb.type == BlockType::Repeater && (nb.flags & SimFlags::ACTIVE)) {
+            VoxelCoord out = facingOffset(nb.facing);
+            if (out.x == -sideB.x && out.z == -sideB.z)
+                return true;
+        }
+    }
+
+    return false;
+}
+
+// ══════════════════════════════════════════════════════════
+//  P3：透明度表（红石粉竖向传播）
+//  只列举项目中确认存在的 BlockType
+// ══════════════════════════════════════════════════════════
+
+bool RedstoneLogic::isTransparent(BlockType t)
+{
+    switch (t) {
+    case BlockType::Air:
+    case BlockType::RedstoneWire:
+    case BlockType::RedstoneTorch:
+    case BlockType::Repeater:
+    case BlockType::Comparator:
+    case BlockType::Lever:
+    case BlockType::StoneButton:
+    case BlockType::WoodButton:
+    case BlockType::StonePressurePlate:
+    case BlockType::WoodPressurePlate:
+    case BlockType::LightWeightedPressurePlate:
+    case BlockType::HeavyWeightedPressurePlate:
+    case BlockType::PoweredRail:
+    case BlockType::Glass:
+        return true;
+    default:
+        return false;
+    }
+}
+
+// ══════════════════════════════════════════════════════════
+//  P4：充能铁轨工具
+// ══════════════════════════════════════════════════════════
+
+bool RedstoneLogic::canActivateRail(const Block &b)
+{
+    switch (b.type) {
+    case BlockType::Lever:
+    case BlockType::StoneButton:
+    case BlockType::WoodButton:
+    case BlockType::StonePressurePlate:
+    case BlockType::WoodPressurePlate:
+    case BlockType::LightWeightedPressurePlate:
+    case BlockType::HeavyWeightedPressurePlate:
+        return (b.flags & SimFlags::ACTIVE) != 0;
+    case BlockType::RedstoneBlock:
+        return true;
+    case BlockType::RedstoneTorch:
+    case BlockType::Repeater:
+    case BlockType::Comparator:
+        return (b.flags & SimFlags::ACTIVE) != 0 || b.power > 0;
+    case BlockType::RedstoneWire:
+        return b.power > 0;
+    case BlockType::PoweredRail:
+        return (b.flags & SimFlags::LIT) != 0;
+    default:
+        return false;
+    }
+}
+
+bool RedstoneLogic::areRailsConnected(const VoxelCoord &a,
+                                       const VoxelCoord &b)
+{
+    if (a.y != b.y) return false;
+    const int dx = std::abs(a.x - b.x);
+    const int dz = std::abs(a.z - b.z);
+    return (dx + dz == 1);
 }

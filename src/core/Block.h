@@ -33,6 +33,7 @@ enum class BlockType : uint8_t
 
     Piston,
     StickyPiston,
+    PistonHead,
     Dropper,
     Dispenser,
     Hopper,
@@ -118,6 +119,7 @@ inline const BlockMeta &getBlockMeta(BlockType type)
 
         { "piston_side",                   "活塞",           BlockGroup::Actuator,      true,  true,  true  },
         { "piston_side",                   "粘性活塞",       BlockGroup::Actuator,      true,  true,  true  },
+        { "piston_top_normal",             "活塞臂",         BlockGroup::Actuator,      true,  false, true  },
         { "dropper_front",                 "投掷器",         BlockGroup::Actuator,      true,  true,  true  },
         { "dispenser_front",               "发射器",         BlockGroup::Actuator,      true,  true,  true  },
         { "hopper_side",                   "漏斗",           BlockGroup::Actuator,      true,  true,  true  },

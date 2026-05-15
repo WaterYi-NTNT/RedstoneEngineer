@@ -5,6 +5,7 @@
 
 int main(int argc, char *argv[])
 {
+    BlockModelLoader::clearCache();
     QApplication app(argc, argv);
     app.setApplicationName("RedstoneEngineer");
 

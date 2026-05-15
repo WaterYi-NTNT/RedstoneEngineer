@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -30,7 +33,6 @@ jobs:
             echo "$($mingw.DirectoryName)" >> $env:GITHUB_PATH
             echo "Found MinGW: $($mingw.DirectoryName)"
           } else {
-            echo "MinGW not found, searching Qt dir..."
             $mingw2 = Get-ChildItem "D:\a\RedstoneEngineer\Qt" -Recurse -Filter "mingw32-make.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
             echo "$($mingw2.DirectoryName)" >> $env:GITHUB_PATH
             echo "Found MinGW: $($mingw2.DirectoryName)"
@@ -50,7 +52,6 @@ jobs:
           mkdir release
           copy build\RedstoneEngineer.exe release\
           windeployqt --release release\RedstoneEngineer.exe
-          xcopy /E /I data release\data
 
       - name: Package
         run: |

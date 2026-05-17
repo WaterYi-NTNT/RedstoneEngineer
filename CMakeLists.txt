@@ -7,6 +7,12 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -Wall")
+else()
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -Wall")
+endif()
+
 if(NOT DEFINED CMAKE_PREFIX_PATH)
     set(CMAKE_PREFIX_PATH "E:/Qt/6.11.0/mingw_64")
 endif()

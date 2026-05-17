@@ -174,8 +174,7 @@ void SimEngine::updateObservers()
             continue;
         }
 
-        bool changed = (memcmp(&currentObserved, &snapshotIt->second,
-                                sizeof(Block)) != 0);
+        bool changed = (currentObserved != snapshotIt->second);
         if (!changed) continue;
 
         Block current = getEffectiveBlock(coord);
@@ -298,7 +297,7 @@ void SimEngine::scheduleLogicUpdates()
         {
             Block newB = RedstoneLogic::evaluate(
                              current, coord, *m_world, m_tick);
-            if (memcmp(&newB, &current, sizeof(Block)) != 0)
+            if (newB != current)
                 writeBlock(coord, newB);
             break;
         }
@@ -504,7 +503,7 @@ void SimEngine::updateAllActuators(bool includePistons)
             int   inp  = computeBlockInput(coord);
             Block newB = current;
             RedstoneLogic::applyActuator(newB, inp);
-            if (memcmp(&newB, &current, sizeof(Block)) != 0)
+            if (newB != current)
                 writeBlock(coord, newB);
             break;
         }
@@ -516,7 +515,7 @@ void SimEngine::updateAllActuators(bool includePistons)
             int   inp  = computeBlockInput(coord);
             Block newB = current;
             RedstoneLogic::applyActuator(newB, inp);
-            if (memcmp(&newB, &current, sizeof(Block)) != 0)
+            if (newB != current)
                 writeBlock(coord, newB);
             break;
         }
@@ -667,7 +666,7 @@ void SimEngine::flushWriteBuffer()
 {
     for (auto &[coord, block] : m_writeBuffer) {
         Block old = m_world->getBlock(coord.x, coord.y, coord.z);
-        if (memcmp(&block, &old, sizeof(Block)) != 0) {
+        if (block != old) {
             m_world->setBlock(coord.x, coord.y, coord.z, block);
             m_changedCoords.append(coord);
         }

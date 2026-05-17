@@ -4,27 +4,6 @@
 #include <functional>
 #include "Block.h"
 
-struct VoxelCoord
-{
-    int x = 0, y = 0, z = 0;
-
-    bool operator==(const VoxelCoord &o) const
-    {
-        return x == o.x && y == o.y && z == o.z;
-    }
-};
-
-struct VoxelCoordHash
-{
-    size_t operator()(const VoxelCoord &c) const noexcept
-    {
-        size_t h = std::hash<int>{}(c.x);
-        h ^= std::hash<int>{}(c.y) + 0x9e3779b9u + (h << 6) + (h >> 2);
-        h ^= std::hash<int>{}(c.z) + 0x9e3779b9u + (h << 6) + (h >> 2);
-        return h;
-    }
-};
-
 class VoxelWorld
 {
 public:

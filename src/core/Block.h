@@ -146,7 +146,7 @@ struct Block
     BlockType   type    = BlockType::Air;
     BlockFacing facing  = BlockFacing::North;
     uint8_t     power   = 0;
-    uint8_t     flags   = 0;
+    uint16_t     flags   = 0;
 
     bool isEmpty()   const { return type == BlockType::Air; }
     bool isPowered() const { return power > 0; }

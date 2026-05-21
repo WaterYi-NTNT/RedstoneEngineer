@@ -101,11 +101,36 @@ Block RedstoneLogic::evalTorch(const Block &self,
                                 const VoxelWorld &world)
 {
     VoxelCoord attachedOffset = facingOffset(opposite(self.facing));
-    Block host = world.getBlock(pos.x + attachedOffset.x,
-                                pos.y + attachedOffset.y,
-                                pos.z + attachedOffset.z);
+    VoxelCoord attachedPos{
+        pos.x + attachedOffset.x,
+        pos.y + attachedOffset.y,
+        pos.z + attachedOffset.z
+    };
+    Block host = world.getBlock(attachedPos.x,
+                                attachedPos.y,
+                                attachedPos.z);
+
     bool hostPowered = (host.power > 0)
                     || (host.flags & SimFlags::STRONG_POWERED);
+
+    if (!hostPowered) {
+        const VoxelCoord neighbors6[6] = {
+            { 0, 0,-1}, { 1, 0, 0}, { 0, 0, 1},
+            {-1, 0, 0}, { 0, 1, 0}, { 0,-1, 0},
+        };
+        for (const auto &d : neighbors6) {
+            VoxelCoord np{
+                attachedPos.x + d.x,
+                attachedPos.y + d.y,
+                attachedPos.z + d.z
+            };
+            Block nb = world.getBlock(np.x, np.y, np.z);
+            if (nb.type == BlockType::RedstoneWire && nb.power > 0) {
+                hostPowered = true;
+                break;
+            }
+        }
+    }
 
     Block next = self;
     if (hostPowered) {

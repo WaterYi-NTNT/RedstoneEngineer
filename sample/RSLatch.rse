@@ -1,0 +1,321 @@
+{
+    "blocks": [
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 13,
+            "type": 16,
+            "x": -3,
+            "y": 0,
+            "z": -3
+        },
+        {
+            "facing": 0,
+            "flags": 32,
+            "power": 0,
+            "type": 29,
+            "x": -2,
+            "y": 0,
+            "z": -3
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 0,
+            "type": 2,
+            "x": -13,
+            "y": 0,
+            "z": 10
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 14,
+            "type": 16,
+            "x": -8,
+            "y": 0,
+            "z": 10
+        },
+        {
+            "facing": 2,
+            "flags": 0,
+            "power": 0,
+            "type": 22,
+            "x": -5,
+            "y": 0,
+            "z": -4
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 0,
+            "type": 16,
+            "x": -5,
+            "y": 0,
+            "z": 8
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 0,
+            "type": 16,
+            "x": -3,
+            "y": 0,
+            "z": 8
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 10,
+            "type": 16,
+            "x": -12,
+            "y": 0,
+            "z": 10
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 0,
+            "type": 18,
+            "x": -5,
+            "y": 0,
+            "z": -3
+        },
+        {
+            "facing": 2,
+            "flags": 1,
+            "power": 15,
+            "type": 17,
+            "x": -8,
+            "y": 0,
+            "z": 9
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 0,
+            "type": 16,
+            "x": -11,
+            "y": 0,
+            "z": 8
+        },
+        {
+            "facing": 0,
+            "flags": 256,
+            "power": 0,
+            "type": 35,
+            "x": -7,
+            "y": 0,
+            "z": 10
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 0,
+            "type": 16,
+            "x": -6,
+            "y": 0,
+            "z": 8
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 0,
+            "type": 16,
+            "x": -7,
+            "y": 0,
+            "z": 8
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 0,
+            "type": 2,
+            "x": -8,
+            "y": 0,
+            "z": -1
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 0,
+            "type": 16,
+            "x": -10,
+            "y": 0,
+            "z": 8
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 0,
+            "type": 2,
+            "x": -8,
+            "y": 0,
+            "z": -4
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 0,
+            "type": 16,
+            "x": -9,
+            "y": 0,
+            "z": 8
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 0,
+            "type": 2,
+            "x": -13,
+            "y": 0,
+            "z": 8
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 0,
+            "type": 35,
+            "x": -8,
+            "y": 0,
+            "z": 8
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 0,
+            "type": 22,
+            "x": -5,
+            "y": 0,
+            "z": -1
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 0,
+            "type": 16,
+            "x": -4,
+            "y": 0,
+            "z": 8
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 0,
+            "type": 16,
+            "x": -6,
+            "y": 0,
+            "z": -1
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 0,
+            "type": 16,
+            "x": -7,
+            "y": 0,
+            "z": -1
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 0,
+            "type": 16,
+            "x": -6,
+            "y": 0,
+            "z": -4
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 0,
+            "type": 16,
+            "x": -7,
+            "y": 0,
+            "z": -4
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 0,
+            "type": 16,
+            "x": -12,
+            "y": 0,
+            "z": 8
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 13,
+            "type": 16,
+            "x": -7,
+            "y": 1,
+            "z": 10
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 13,
+            "type": 16,
+            "x": -9,
+            "y": 0,
+            "z": 10
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 0,
+            "type": 17,
+            "x": -7,
+            "y": 0,
+            "z": 9
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 11,
+            "type": 16,
+            "x": -11,
+            "y": 0,
+            "z": 10
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 0,
+            "type": 29,
+            "x": -2,
+            "y": 0,
+            "z": 8
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 0,
+            "type": 16,
+            "x": -8,
+            "y": 1,
+            "z": 8
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 12,
+            "type": 16,
+            "x": -10,
+            "y": 0,
+            "z": 10
+        },
+        {
+            "facing": 0,
+            "flags": 0,
+            "power": 14,
+            "type": 16,
+            "x": -4,
+            "y": 0,
+            "z": -3
+        }
+    ],
+    "layer": 0,
+    "version": 1
+}

@@ -70,6 +70,7 @@ private:
 
     
     Block getEffectiveBlock(const VoxelCoord &c) const;
+    int getReceivedSignal(const VoxelCoord &pos) const;
     int   computeBlockInput(const VoxelCoord &c) const;
     void  writeBlock(VoxelCoord c, Block b);
     void  flushWriteBuffer();
@@ -83,6 +84,7 @@ private:
 
     CoordMap<Block>    m_writeBuffer;
     CoordMap<uint8_t>  m_pendingRepeaterOutput;
+    CoordMap<uint8_t> m_pendingTorchOutput;
     CoordMap<Block>    m_observerSnapshot;
     CoordMap<bool>     m_pistonPrevLit;
 

@@ -443,11 +443,17 @@ QString GridScene::getStateTexPath(const Block &block, int faceIndex) const
     }
     case BlockType::RedstoneTorch:
     {
-        const bool lit = (block.flags & SimFlags::ACTIVE) != 0;
+        const bool lit    = (block.flags & SimFlags::ACTIVE) != 0;
+        const bool isWall = (block.facing != BlockFacing::Up
+                        && block.facing != BlockFacing::Down);
+        const QString bsName = isWall
+            ? QStringLiteral("redstone_wall_torch")
+            : QStringLiteral("redstone_torch");
+
         BlockStateQuery q;
         q.facing = block.facing;
         q.lit    = lit; q.matchLit = true;
-        bsr = BlockStateLoader::getResultWithQuery("redstone_torch", q);
+        bsr = BlockStateLoader::getResultWithQuery(bsName, q);
         if (!bsr.isValid()) bsr = BlockStateLoader::getResult(block.type, block.facing);
         break;
     }
@@ -516,10 +522,14 @@ GridScene::TexInfo GridScene::getTopViewTex(const Block &block) const
     }
     case BlockType::RedstoneTorch:
     {
+        const bool isWall = (block.facing != BlockFacing::Up
+                        && block.facing != BlockFacing::Down);
+        const double rot = isWall ? facingToAngle(block.facing) : 0.0;
+
         const QString path = getStateTexPath(block, FACE_NORTH);
-        if (!path.isEmpty()) return {path, 0.0, false};
+        if (!path.isEmpty()) return {path, rot, false};
         const auto &meta = getBlockMeta(block.type);
-        return {QString(meta.enumKey), 0.0, false};
+        return {QString(meta.enumKey), rot, false};
     }
     case BlockType::Comparator:
     {

@@ -13,3 +13,22 @@
 cmake -B build
 cmake --build build
 ```
+
+### Linux 平台构建方式
+
+将编译版本区分为 `Debug` 和 `Release` 模式，在编译时使用的 Flags 优化不同。
+
+默认使用 `Debug` 模式进行编译，使用如下的命令：
+
+```bash
+cmake --preset linux-gcc-debug
+cmake --build --preset linux-gcc-debug
+```
+
+当需要使用 `Release` 模式进行发布时：
+
+```bash
+cmake --preset linux-gcc-release
+cmake --build --preset linux-gcc-release
+cmake --build --preset package-deb-all
+```

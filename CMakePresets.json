@@ -6,13 +6,69 @@
             "displayName": "GCC 15.2.0 x86_64-w64-mingw32",
             "description": "正在使用编译器: C = E:\\cpp_item\\mingw64\\bin\\gcc.exe, CXX = E:\\cpp_item\\mingw64\\bin\\g++.exe",
             "generator": "MinGW Makefiles",
-            "binaryDir": "${sourceDir}/out/build/${presetName}",
+            "binaryDir": "${sourceDir}/build/${presetName}",
             "cacheVariables": {
-                "CMAKE_INSTALL_PREFIX": "${sourceDir}/out/install/${presetName}",
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/install/${presetName}",
                 "CMAKE_C_COMPILER": "E:/cpp_item/mingw64/bin/gcc.exe",
                 "CMAKE_CXX_COMPILER": "E:/cpp_item/mingw64/bin/g++.exe",
                 "CMAKE_BUILD_TYPE": "Debug"
             }
+        },
+        {
+            "name": "linux-gcc-debug",
+            "displayName": "Linux GCC Debug",
+            "description": "Build on Linux with the system GCC toolchain",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "linux-gcc-release",
+            "displayName": "Linux GCC Release",
+            "description": "Release build on Linux with the system GCC toolchain",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "linux-gcc-debug",
+            "displayName": "Linux GCC Debug",
+            "configurePreset": "linux-gcc-debug"
+        },
+        {
+            "name": "linux-gcc-release",
+            "displayName": "Linux GCC Release",
+            "configurePreset": "linux-gcc-release"
+        },
+        {
+            "name": "package-deb-amd64",
+            "displayName": "Package Debian amd64",
+            "configurePreset": "linux-gcc-release",
+            "targets": [
+                "package-deb-amd64"
+            ]
+        },
+        {
+            "name": "package-deb-aarch64",
+            "displayName": "Package Debian aarch64",
+            "configurePreset": "linux-gcc-release",
+            "targets": [
+                "package-deb-aarch64"
+            ]
+        },
+        {
+            "name": "package-deb-all",
+            "displayName": "Package Debian amd64 and aarch64",
+            "configurePreset": "linux-gcc-release",
+            "targets": [
+                "package-deb-all"
+            ]
         }
     ]
 }

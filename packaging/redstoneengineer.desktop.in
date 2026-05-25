@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=RedstoneEngineer
+Comment=Minecraft redstone circuit simulator
+Exec=redstoneengineer
+Terminal=false
+Categories=Development;Science;

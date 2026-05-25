@@ -1,0 +1,2 @@
+#!/bin/sh
+exec "@REDSTONEENGINEER_RUNTIME_DIR@/RedstoneEngineer" "$@"

@@ -13,6 +13,7 @@
 #include "palette/BlockPalette.h"
 #include "sim/SimEngine.h"
 #include "editor2d/GridScene.h"
+#include "editor2d/CommandHistory.h"
 
 class GridView;
 class VoxelRenderer;
@@ -35,32 +36,30 @@ private slots:
     void onTickFinished    (const QVector<VoxelCoord> &changed);
     void onSourceInteracted(int x, int y, int z);
     void updateModeActions (GridScene::EditMode mode);
+    void onHistoryChanged  (bool canUndo, bool canRedo);
 
 private:
-    
-    VoxelWorld *m_world     = nullptr;
-    SimEngine  *m_simEngine = nullptr;
 
-    
+    VoxelWorld     *m_world     = nullptr;
+    SimEngine      *m_simEngine = nullptr;
+    CommandHistory *m_history   = nullptr;
+
     BlockPalette  *m_palette       = nullptr;
     GridView      *m_gridView      = nullptr;
     GridScene     *m_gridScene     = nullptr;
     VoxelRenderer *m_voxelRenderer = nullptr;
     QSplitter     *m_splitter      = nullptr;
 
-    
     QToolBar *m_editorToolBar = nullptr;
     QSpinBox *m_layerSpinBox  = nullptr;
     QLabel   *m_brushLabel    = nullptr;
 
-    
     QToolBar *m_modeToolBar     = nullptr;
     QAction  *m_actModePaint    = nullptr;
     QAction  *m_actModeSelect   = nullptr;
     QAction  *m_actModeInteract = nullptr;
     QLabel   *m_modeHintLabel   = nullptr;
 
-    
     QToolBar *m_simToolBar   = nullptr;
     QAction  *m_actSimRun    = nullptr;
     QAction  *m_actSimPause  = nullptr;
@@ -69,15 +68,20 @@ private:
     QLabel   *m_simTickLabel = nullptr;
     QSpinBox *m_simSpeedBox  = nullptr;
 
-    
+    QAction *m_actUndo  = nullptr;
+    QAction *m_actRedo  = nullptr;
+    QAction *m_actCopy  = nullptr;
+    QAction *m_actPaste = nullptr;
+
+    QAction *m_actExportLitematic = nullptr;
+
     QLabel *m_statusLayerLabel = nullptr;
     QLabel *m_statusCoordLabel = nullptr;
     QLabel *m_statusBlockLabel = nullptr;
     QLabel *m_statusSimLabel   = nullptr;
 
-    
-    QString m_currentFile;          
-    bool    m_modified = false;     
+    QString m_currentFile;
+    bool    m_modified = false;
 
     bool saveToFile  (const QString &path);
     bool loadFromFile(const QString &path);
@@ -87,9 +91,8 @@ private:
     void saveFileAs();
     void setCurrentFile(const QString &path);
     void setModified(bool modified);
-    bool confirmDiscard();          
+    bool confirmDiscard();
 
-    
     void setupWorld();
     void setupLayout();
     void setupToolBar();

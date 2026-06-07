@@ -11,12 +11,11 @@ int main(int argc, char *argv[])
     BlockModelLoader::clearCache();
     QApplication app(argc, argv);
     app.setApplicationName("RedstoneEngineer");
-    
+
     const QStringList candidates = {
         QApplication::applicationDirPath() + "/data/1.21.1",
         QApplication::applicationDirPath() + "/data",
 #ifdef QT_DEBUG
-        // 开发环境兜底，仅 Debug 构建生效
         "E:/Code/RedstoneEngineer/data/1.21.1",
 #endif
     };

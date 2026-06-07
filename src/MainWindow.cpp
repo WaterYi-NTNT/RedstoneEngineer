@@ -6,6 +6,7 @@
 #include "core/Block.h"
 #include "core/VoxelWorld.h"
 #include "sim/SimFlags.h"
+#include "io/LitematicExporter.h"
 
 #include <QApplication>
 #include <QPalette>
@@ -24,10 +25,12 @@
 #include <QCloseEvent>
 #include <QMessageBox>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QFile>
+#include <memory>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -51,11 +54,7 @@ MainWindow::MainWindow(QWidget *parent)
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
-    if (!confirmDiscard())
-    {
-        event->ignore();
-        return;
-    }
+    if (!confirmDiscard()) { event->ignore(); return; }
     event->accept();
 }
 
@@ -73,7 +72,6 @@ void MainWindow::setCurrentFile(const QString &path)
 void MainWindow::setModified(bool modified)
 {
     m_modified = modified;
-
     QString t = windowTitle();
     if (modified && !t.startsWith('*'))
         setWindowTitle('*' + t);
@@ -83,8 +81,7 @@ void MainWindow::setModified(bool modified)
 
 bool MainWindow::confirmDiscard()
 {
-    if (!m_modified)
-        return true;
+    if (!m_modified) return true;
 
     const int ret = QMessageBox::warning(
         this,
@@ -93,39 +90,24 @@ bool MainWindow::confirmDiscard()
         QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel,
         QMessageBox::Save);
 
-    if (ret == QMessageBox::Save)
-    {
-        saveFile();
-        return !m_modified;
-    }
-    if (ret == QMessageBox::Discard)
-        return true;
+    if (ret == QMessageBox::Save)    { saveFile(); return !m_modified; }
+    if (ret == QMessageBox::Discard) return true;
     return false;
 }
 
 void MainWindow::newFile()
 {
-    if (!confirmDiscard())
-        return;
+    if (!confirmDiscard()) return;
 
-    if (m_simEngine)
-    {
-        m_simEngine->stop();
-        m_simEngine->reset();
-    }
-    if (m_world)
-        m_world->clearAll();
+    if (m_simEngine) { m_simEngine->stop(); m_simEngine->reset(); }
+    if (m_world)     m_world->clearAll();
+    if (m_history)   m_history->clear();
 
-    if (m_gridScene)
-        m_gridScene->refresh();
-    if (m_voxelRenderer)
-        m_voxelRenderer->markDirty();
-    if (m_statusBlockLabel)
-        m_statusBlockLabel->setText("方块数：0");
-    if (m_simTickLabel)
-        m_simTickLabel->setText("Tick: 0");
-    if (m_statusSimLabel)
-        m_statusSimLabel->setText("■ 已重置");
+    if (m_gridScene)        m_gridScene->refresh();
+    if (m_voxelRenderer)    m_voxelRenderer->markDirty();
+    if (m_statusBlockLabel) m_statusBlockLabel->setText("方块数：0");
+    if (m_simTickLabel)     m_simTickLabel->setText("Tick: 0");
+    if (m_statusSimLabel)   m_statusSimLabel->setText("■ 已重置");
 
     updateSimActions(false);
     setCurrentFile(QString());
@@ -133,20 +115,15 @@ void MainWindow::newFile()
 
 void MainWindow::openFile()
 {
-    if (!confirmDiscard())
-        return;
+    if (!confirmDiscard()) return;
 
     const QString path = QFileDialog::getOpenFileName(
-        this,
-        tr("打开电路文件"),
-        QString(),
+        this, tr("打开电路文件"), QString(),
         tr("RedstoneEngineer 电路 (*.rse);;所有文件 (*)"));
 
-    if (path.isEmpty())
-        return;
+    if (path.isEmpty()) return;
 
-    if (!loadFromFile(path))
-    {
+    if (!loadFromFile(path)) {
         QMessageBox::critical(this, tr("打开失败"),
                               tr("无法读取文件：\n%1").arg(path));
         return;
@@ -156,33 +133,22 @@ void MainWindow::openFile()
 
 void MainWindow::saveFile()
 {
-    if (m_currentFile.isEmpty())
-    {
-        saveFileAs();
-        return;
-    }
+    if (m_currentFile.isEmpty()) { saveFileAs(); return; }
     if (!saveToFile(m_currentFile))
-    {
         QMessageBox::critical(this, tr("保存失败"),
                               tr("无法写入文件：\n%1").arg(m_currentFile));
-    }
 }
 
 void MainWindow::saveFileAs()
 {
     const QString path = QFileDialog::getSaveFileName(
-        this,
-        tr("保存电路文件"),
-        m_currentFile.isEmpty()
-            ? QStringLiteral("untitled.rse")
-            : m_currentFile,
+        this, tr("保存电路文件"),
+        m_currentFile.isEmpty() ? QStringLiteral("untitled.rse") : m_currentFile,
         tr("RedstoneEngineer 电路 (*.rse);;所有文件 (*)"));
 
-    if (path.isEmpty())
-        return;
+    if (path.isEmpty()) return;
 
-    if (!saveToFile(path))
-    {
+    if (!saveToFile(path)) {
         QMessageBox::critical(this, tr("保存失败"),
                               tr("无法写入文件：\n%1").arg(path));
         return;
@@ -192,34 +158,29 @@ void MainWindow::saveFileAs()
 
 bool MainWindow::saveToFile(const QString &path)
 {
-    if (!m_world)
-        return false;
+    if (!m_world) return false;
 
     QJsonObject root;
     root["version"] = 1;
-    root["layer"] = m_gridScene ? m_gridScene->currentLayer() : 0;
+    root["layer"]   = m_gridScene ? m_gridScene->currentLayer() : 0;
 
     QJsonArray blocks;
-    for (const auto &[coord, block] : m_world->allBlocks())
-    {
-        if (block.isEmpty())
-            continue;
+    for (const auto &[coord, block] : m_world->allBlocks()) {
+        if (block.isEmpty()) continue;
         QJsonObject obj;
-        obj["x"] = coord.x;
-        obj["y"] = coord.y;
-        obj["z"] = coord.z;
-        obj["type"] = static_cast<int>(block.type);
+        obj["x"]      = coord.x;
+        obj["y"]      = coord.y;
+        obj["z"]      = coord.z;
+        obj["type"]   = static_cast<int>(block.type);
         obj["facing"] = static_cast<int>(block.facing);
-        obj["power"] = static_cast<int>(block.power);
-        obj["flags"] = static_cast<int>(block.flags);
+        obj["power"]  = static_cast<int>(block.power);
+        obj["flags"]  = static_cast<int>(block.flags);
         blocks.append(obj);
     }
     root["blocks"] = blocks;
 
     QFile file(path);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
-        return false;
-
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) return false;
     file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
     file.close();
 
@@ -230,60 +191,47 @@ bool MainWindow::saveToFile(const QString &path)
 bool MainWindow::loadFromFile(const QString &path)
 {
     QFile file(path);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
-        return false;
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return false;
 
     QJsonParseError err;
     const QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &err);
     file.close();
 
-    if (err.error != QJsonParseError::NoError || !doc.isObject())
-        return false;
+    if (err.error != QJsonParseError::NoError || !doc.isObject()) return false;
 
     const QJsonObject root = doc.object();
-    if (root["version"].toInt() != 1)
-        return false;
+    if (root["version"].toInt() != 1) return false;
 
-    if (m_simEngine)
-    {
-        m_simEngine->stop();
-        m_simEngine->reset();
-    }
-    if (m_world)
-        m_world->clearAll();
+    if (m_simEngine) { m_simEngine->stop(); m_simEngine->reset(); }
+    if (m_world)     m_world->clearAll();
 
     const QJsonArray blocks = root["blocks"].toArray();
-    for (const QJsonValue &val : blocks)
-    {
+    for (const QJsonValue &val : blocks) {
         const QJsonObject obj = val.toObject();
         Block b;
-        b.type = static_cast<BlockType>(obj["type"].toInt());
+        b.type   = static_cast<BlockType>  (obj["type"]  .toInt());
         b.facing = static_cast<BlockFacing>(obj["facing"].toInt());
-        b.power = static_cast<uint8_t>(obj["power"].toInt());
-        b.flags = static_cast<uint8_t>(obj["flags"].toInt());
+        b.power  = static_cast<uint8_t>    (obj["power"] .toInt());
+        b.flags  = static_cast<uint16_t>   (obj["flags"] .toInt());
         if (!b.isEmpty())
-            m_world->setBlock(obj["x"].toInt(),
-                              obj["y"].toInt(),
+            m_world->setBlock(obj["x"].toInt(), obj["y"].toInt(),
                               obj["z"].toInt(), b);
     }
 
+    if (m_history) m_history->clear();
+
     const int layer = root["layer"].toInt(0);
-    if (m_gridScene)
-    {
+    if (m_gridScene) {
         m_gridScene->setCurrentLayer(layer);
         m_gridScene->refresh();
     }
-    if (m_layerSpinBox)
-        m_layerSpinBox->setValue(layer);
-    if (m_voxelRenderer)
-        m_voxelRenderer->markDirty();
+    if (m_layerSpinBox)  m_layerSpinBox->setValue(layer);
+    if (m_voxelRenderer) m_voxelRenderer->markDirty();
     if (m_statusBlockLabel && m_world)
         m_statusBlockLabel->setText(
             QString("方块数：%1").arg(m_world->blockCount()));
-    if (m_simTickLabel)
-        m_simTickLabel->setText("Tick: 0");
-    if (m_statusSimLabel)
-        m_statusSimLabel->setText("■ 已重置");
+    if (m_simTickLabel)   m_simTickLabel->setText("Tick: 0");
+    if (m_statusSimLabel) m_statusSimLabel->setText("■ 已重置");
 
     updateSimActions(false);
     return true;
@@ -291,7 +239,415 @@ bool MainWindow::loadFromFile(const QString &path)
 
 void MainWindow::setupWorld()
 {
-    m_world = new VoxelWorld();
+    m_world   = new VoxelWorld();
+    m_history = new CommandHistory(m_world, this);
+
+    connect(m_history, &CommandHistory::historyChanged,
+            this,      &MainWindow::onHistoryChanged);
+}
+
+void MainWindow::setupLayout()
+{
+
+    QMenuBar *mb = new QMenuBar(this);
+
+    QMenu *mFile = mb->addMenu("文件(&F)");
+    auto *actNew    = mFile->addAction("新建(&N)");
+    auto *actOpen   = mFile->addAction("打开(&O)");
+    auto *actSave   = mFile->addAction("保存(&S)");
+    auto *actSaveAs = mFile->addAction("另存为(&A)...");
+
+    actNew   ->setShortcut(QKeySequence::New);
+    actOpen  ->setShortcut(QKeySequence::Open);
+    actSave  ->setShortcut(QKeySequence::Save);
+    actSaveAs->setShortcut(QKeySequence::SaveAs);
+
+    connect(actNew,    &QAction::triggered, this, &MainWindow::newFile);
+    connect(actOpen,   &QAction::triggered, this, &MainWindow::openFile);
+    connect(actSave,   &QAction::triggered, this, &MainWindow::saveFile);
+    connect(actSaveAs, &QAction::triggered, this, &MainWindow::saveFileAs);
+
+    mFile->addSeparator();
+    m_actExportLitematic = mFile->addAction("导出 Litematica (.litematic)...");
+    m_actExportLitematic->setToolTip("将当前电路导出为 Minecraft Litematica 格式");
+    connect(m_actExportLitematic, &QAction::triggered, this, [this]() {
+        if (!m_world) return;
+
+        const QString defaultName = m_currentFile.isEmpty()
+            ? QStringLiteral("untitled")
+            : QFileInfo(m_currentFile).baseName();
+
+        const QString path = QFileDialog::getSaveFileName(
+            this,
+            tr("导出 Litematica"),
+            defaultName + ".litematic",
+            tr("Litematica 文件 (*.litematic);;所有文件 (*)"));
+
+        if (path.isEmpty()) return;
+
+        const auto result = LitematicExporter::exportToFile(
+            *m_world,
+            path,
+            QFileInfo(path).baseName());
+
+        if (result.success) {
+            QMessageBox::information(this, tr("导出成功"),
+                tr("已导出到：\n%1").arg(path));
+        } else {
+            QMessageBox::critical(this, tr("导出失败"),
+                result.errorMessage);
+        }
+    });
+
+    mFile->addSeparator();
+    mFile->addAction("退出(&Q)", qApp, &QApplication::quit);
+
+    QMenu *mEdit = mb->addMenu("编辑(&E)");
+
+    m_actUndo  = mEdit->addAction("撤销(&U)");
+    m_actRedo  = mEdit->addAction("重做(&R)");
+    mEdit->addSeparator();
+    m_actCopy  = mEdit->addAction("复制(&C)");
+    m_actPaste = mEdit->addAction("粘贴(&V)");
+
+    m_actUndo ->setShortcut(QKeySequence::Undo);
+    m_actRedo ->setShortcut(QKeySequence::Redo);
+    m_actCopy ->setShortcut(QKeySequence::Copy);
+    m_actPaste->setShortcut(QKeySequence::Paste);
+
+    m_actUndo->setEnabled(false);
+    m_actRedo->setEnabled(false);
+
+    connect(m_actUndo, &QAction::triggered, this, [this]() {
+        if (!m_history) return;
+        m_history->undo();
+        if (m_gridScene) m_gridScene->refresh();
+        if (m_statusBlockLabel && m_world)
+            m_statusBlockLabel->setText(
+                QString("方块数：%1").arg(m_world->blockCount()));
+        setModified(true);
+    });
+    connect(m_actRedo, &QAction::triggered, this, [this]() {
+        if (!m_history) return;
+        m_history->redo();
+        if (m_gridScene) m_gridScene->refresh();
+        if (m_statusBlockLabel && m_world)
+            m_statusBlockLabel->setText(
+                QString("方块数：%1").arg(m_world->blockCount()));
+        setModified(true);
+    });
+    connect(m_actCopy,  &QAction::triggered, this, [this]() {
+        if (m_gridScene) m_gridScene->copySelection();
+    });
+    connect(m_actPaste, &QAction::triggered, this, [this]() {
+        if (m_gridScene) m_gridScene->pasteAtHover();
+    });
+
+    QMenu *mView = mb->addMenu("视图(&V)");
+    QAction *actResetCam = mView->addAction("重置 3D 视角 (F)");
+    actResetCam->setShortcut(QKeySequence(Qt::Key_F));
+
+    mb->addMenu("帮助(&H)")->addAction("关于");
+    setMenuBar(mb);
+
+    m_palette = new BlockPalette(this);
+
+    connect(m_palette, &BlockPalette::blockSelected,
+            this, [this](BlockType type) {
+        if (m_gridScene) m_gridScene->setCurrentBlockType(type);
+        if (m_brushLabel && m_gridScene) {
+            const auto &meta    = getBlockMeta(type);
+            const char *fnames[]= {"北","东","南","西","上","下"};
+            m_brushLabel->setText(
+                QString("  画笔：%1  朝向：%2")
+                    .arg(QString::fromUtf8(meta.displayName))
+                    .arg(fnames[static_cast<int>(m_gridScene->currentFacing())]));
+        }
+    });
+
+    m_gridScene = new GridScene(m_world, this);
+    m_gridScene->setCommandHistory(m_history);
+
+    m_gridView = new GridView(this);
+    m_gridView->setScene(m_gridScene);
+    m_gridView->centerOn(0, 0);
+
+    connect(m_gridScene, &GridScene::layerChanged,
+            this, &MainWindow::onLayerChanged);
+    connect(m_gridScene, &GridScene::blockModified,
+            this, &MainWindow::onBlockModified);
+    connect(m_gridView, &GridView::gridCoordHovered,
+            this, &MainWindow::onGridCoordHovered);
+    connect(m_gridView, &GridView::rotateRequested,
+            m_gridScene, &GridScene::rotateCurrent);
+
+    connect(m_gridScene, &GridScene::facingChanged,
+            this, [this](BlockFacing f) {
+        if (!m_brushLabel || !m_gridScene) return;
+        const char *fnames[] = {"北","东","南","西","上","下"};
+        const auto &meta = getBlockMeta(m_gridScene->currentBlockType());
+        m_brushLabel->setText(
+            QString("  画笔：%1  朝向：%2")
+                .arg(QString::fromUtf8(meta.displayName))
+                .arg(fnames[static_cast<int>(f)]));
+    });
+
+    connect(m_gridScene, &GridScene::selectionChanged,
+            this, [this](const QRect &selRect, int layer) {
+        if (!m_statusCoordLabel) return;
+
+        if (!selRect.isValid()) {
+            m_statusCoordLabel->setText("X = --   Z = --");
+            return;
+        }
+
+        if (selRect.width() == 1 && selRect.height() == 1) {
+            const int gx = selRect.left(), gz = selRect.top();
+            if (m_world && m_world->hasBlock(gx, layer, gz)) {
+                const Block &b       = m_world->getBlock(gx, layer, gz);
+                const auto  &meta    = getBlockMeta(b.type);
+                const char  *fnames[]= {"北","东","南","西","上","下"};
+                m_statusCoordLabel->setText(
+                    QString("选中  X=%1 Z=%2  %3  朝向:%4")
+                        .arg(gx).arg(gz)
+                        .arg(QString::fromUtf8(meta.displayName))
+                        .arg(fnames[static_cast<int>(b.facing)]));
+            } else {
+                m_statusCoordLabel->setText(
+                    QString("选中  X=%1 Z=%2  （空）").arg(gx).arg(gz));
+            }
+        } else {
+            m_statusCoordLabel->setText(
+                QString("选中  X=%1~%2  Z=%3~%4  （%5×%6）")
+                    .arg(selRect.left()) .arg(selRect.right())
+                    .arg(selRect.top())  .arg(selRect.bottom())
+                    .arg(selRect.width()).arg(selRect.height()));
+        }
+    });
+
+    connect(m_gridScene, &GridScene::blockModified,
+            this, [this](int, int, int) { setModified(true); });
+
+    m_voxelRenderer = new VoxelRenderer(m_world, this);
+    m_voxelRenderer->setMinimumWidth(300);
+
+    connect(actResetCam, &QAction::triggered,
+            m_voxelRenderer, &VoxelRenderer::resetCamera);
+
+    if (m_world && m_voxelRenderer) {
+        m_world->setChangeCallback([this](int x, int y, int z, const Block &block) {
+            Q_UNUSED(x); Q_UNUSED(y); Q_UNUSED(z); Q_UNUSED(block);
+            if (m_voxelRenderer) m_voxelRenderer->markDirty();
+        });
+    }
+
+    m_splitter = new QSplitter(Qt::Horizontal, this);
+    m_splitter->addWidget(m_palette);
+    m_splitter->addWidget(m_gridView);
+    m_splitter->addWidget(m_voxelRenderer);
+    m_splitter->setStretchFactor(0, 0);
+    m_splitter->setStretchFactor(1, 6);
+    m_splitter->setStretchFactor(2, 4);
+    m_splitter->setSizes({220, 750, 450});
+    m_splitter->setChildrenCollapsible(false);
+    setCentralWidget(m_splitter);
+}
+
+void MainWindow::setupToolBar()
+{
+    m_editorToolBar = addToolBar("编辑器工具栏");
+    m_editorToolBar->setMovable(false);
+    m_editorToolBar->setFloatable(false);
+    m_editorToolBar->setObjectName("editorToolBar");
+
+    m_editorToolBar->addWidget(new QLabel("  层级 Y：", this));
+
+    auto *btnDown = new QAction("▼", this);
+    auto *btnUp   = new QAction("▲", this);
+    btnDown->setToolTip("降低一层 (Y-1)");
+    btnUp  ->setToolTip("升高一层 (Y+1)");
+
+    m_layerSpinBox = new QSpinBox(this);
+    m_layerSpinBox->setRange(VoxelWorld::LAYER_MIN, VoxelWorld::LAYER_MAX);
+    m_layerSpinBox->setValue(0);
+
+    connect(m_layerSpinBox, &QSpinBox::valueChanged, this, [this](int v) {
+        if (m_gridScene) m_gridScene->setCurrentLayer(v);
+    });
+    connect(btnDown, &QAction::triggered, this, [this]() {
+        m_layerSpinBox->setValue(m_layerSpinBox->value() - 1);
+    });
+    connect(btnUp, &QAction::triggered, this, [this]() {
+        m_layerSpinBox->setValue(m_layerSpinBox->value() + 1);
+    });
+
+    m_editorToolBar->addAction(btnDown);
+    m_editorToolBar->addWidget(m_layerSpinBox);
+    m_editorToolBar->addAction(btnUp);
+    m_editorToolBar->addSeparator();
+
+    auto *btnClear = new QAction("🗑  清空当前层", this);
+    connect(btnClear, &QAction::triggered, this, [this]() {
+        if (!m_world || !m_gridScene || !m_history) return;
+        const int y = m_gridScene->currentLayer();
+
+        auto batch = std::make_unique<BatchCommand>(QStringLiteral("清空层"));
+        for (const auto &[coord, block] : m_world->allBlocks()) {
+            if (coord.y != y || block.isEmpty()) continue;
+            batch->add({coord.x, coord.y, coord.z, block, Block{}});
+        }
+
+        if (!batch->isEmpty()) {
+            batch->redo(*m_world);
+            m_history->push(std::move(batch));
+            m_gridScene->refresh();
+            setModified(true);
+        }
+    });
+    m_editorToolBar->addAction(btnClear);
+    m_editorToolBar->addSeparator();
+
+    m_brushLabel = new QLabel("  画笔：石头  朝向：北", this);
+    m_brushLabel->setStyleSheet("color: #AAAAAA; font-size: 12px;");
+    m_editorToolBar->addWidget(m_brushLabel);
+}
+
+void MainWindow::setupModeToolBar()
+{
+    m_modeToolBar = addToolBar("编辑模式");
+    m_modeToolBar->setMovable(false);
+    m_modeToolBar->setFloatable(false);
+    m_modeToolBar->setObjectName("modeToolBar");
+
+    auto *label = new QLabel("  模式：", this);
+    label->setStyleSheet("color:#AAAAAA; font-size:12px;");
+    m_modeToolBar->addWidget(label);
+
+    auto *group = new QActionGroup(this);
+    group->setExclusive(true);
+
+    m_actModePaint = new QAction("✏  绘制", this);
+    m_actModePaint->setToolTip("绘制模式：左键放置，右键擦除，R 旋转画笔  快捷键 Q");
+    m_actModePaint->setCheckable(true);
+    m_actModePaint->setChecked(true);
+    group->addAction(m_actModePaint);
+    connect(m_actModePaint, &QAction::triggered, this, [this]() {
+        if (m_gridScene) m_gridScene->setEditMode(GridScene::EditMode::Paint);
+    });
+    m_modeToolBar->addAction(m_actModePaint);
+
+    m_actModeSelect = new QAction("🖱  选择", this);
+    m_actModeSelect->setToolTip(
+        "选择模式：左键框选，拖动移动，R 旋转（单格）  快捷键 E");
+    m_actModeSelect->setCheckable(true);
+    group->addAction(m_actModeSelect);
+    connect(m_actModeSelect, &QAction::triggered, this, [this]() {
+        if (m_gridScene) m_gridScene->setEditMode(GridScene::EditMode::Select);
+    });
+    m_modeToolBar->addAction(m_actModeSelect);
+
+    m_actModeInteract = new QAction("⚡  交互", this);
+    m_actModeInteract->setToolTip(
+        "交互模式：左键触发拉杆/按钮，右键循环中继器延迟  快捷键 T");
+    m_actModeInteract->setCheckable(true);
+    group->addAction(m_actModeInteract);
+    connect(m_actModeInteract, &QAction::triggered, this, [this]() {
+        if (m_gridScene) m_gridScene->setEditMode(GridScene::EditMode::Interact);
+    });
+    m_modeToolBar->addAction(m_actModeInteract);
+
+    m_modeToolBar->addSeparator();
+
+    m_modeHintLabel = new QLabel("  ✏  左键放置  右键擦除  R 旋转画笔", this);
+    m_modeHintLabel->setStyleSheet("color:#666688; font-size:11px;");
+    m_modeToolBar->addWidget(m_modeHintLabel);
+
+    connect(m_gridScene, &GridScene::editModeChanged,
+            this, &MainWindow::updateModeActions);
+}
+
+void MainWindow::setupSimToolBar()
+{
+    m_simToolBar = addToolBar("仿真工具栏");
+    m_simToolBar->setMovable(false);
+    m_simToolBar->setFloatable(false);
+    m_simToolBar->setObjectName("simToolBar");
+
+    auto *simLabel = new QLabel("  ⚡ 仿真：", this);
+    simLabel->setStyleSheet("color:#E06C3A; font-weight:bold; font-size:12px;");
+    m_simToolBar->addWidget(simLabel);
+
+    m_actSimRun = new QAction("▶  运行", this);
+    m_actSimRun->setToolTip("开始仿真  Space");
+    m_actSimRun->setShortcut(QKeySequence(Qt::Key_Space));
+    m_simToolBar->addAction(m_actSimRun);
+
+    m_actSimPause = new QAction("⏸  暂停", this);
+    m_actSimPause->setToolTip("暂停仿真");
+    m_simToolBar->addAction(m_actSimPause);
+
+    m_actSimStep = new QAction("⏭  单步", this);
+    m_actSimStep->setToolTip("手动前进一个 tick  Tab");
+    m_actSimStep->setShortcut(QKeySequence(Qt::Key_Tab));
+    m_simToolBar->addAction(m_actSimStep);
+
+    m_simToolBar->addSeparator();
+
+    m_actSimReset = new QAction("⏹  重置", this);
+    m_actSimReset->setToolTip("停止并清除所有仿真状态");
+    m_simToolBar->addAction(m_actSimReset);
+
+    m_simToolBar->addSeparator();
+    m_simToolBar->addWidget(new QLabel("  速率：", this));
+
+    m_simSpeedBox = new QSpinBox(this);
+    m_simSpeedBox->setRange(1, 20);
+    m_simSpeedBox->setValue(4);
+    m_simSpeedBox->setSuffix(" t/s");
+    m_simSpeedBox->setToolTip("仿真速率（1~20 tick/s）");
+    m_simToolBar->addWidget(m_simSpeedBox);
+
+    m_simToolBar->addSeparator();
+
+    m_simTickLabel = new QLabel("  Tick: 0", this);
+    m_simTickLabel->setStyleSheet(
+        "color:#9CDCFE; font-family:monospace; font-size:12px; min-width:100px;");
+    m_simToolBar->addWidget(m_simTickLabel);
+
+    m_simToolBar->addSeparator();
+
+    auto *simHint = new QLabel(
+        "  Space 运行/暂停  Tab 单步  Q 绘制  E 选择  T 交互  "
+        "R 旋转  V 预览下层  Del 删除选区  Esc 取消选区", this);
+    simHint->setStyleSheet("color:#666688; font-size:11px;");
+    m_simToolBar->addWidget(simHint);
+}
+
+void MainWindow::setupStatusBar()
+{
+    QStatusBar *bar = statusBar();
+
+    m_statusLayerLabel = new QLabel("Layer  Y = 0", this);
+    m_statusLayerLabel->setMinimumWidth(120);
+    bar->addWidget(m_statusLayerLabel);
+    bar->addWidget(makeSeparator());
+
+    m_statusCoordLabel = new QLabel("X = --   Z = --", this);
+    m_statusCoordLabel->setMinimumWidth(300);
+    bar->addWidget(m_statusCoordLabel);
+    bar->addWidget(makeSeparator());
+
+    m_statusBlockLabel = new QLabel("方块数：0", this);
+    m_statusBlockLabel->setMinimumWidth(100);
+    bar->addWidget(m_statusBlockLabel);
+    bar->addWidget(makeSeparator());
+
+    m_statusSimLabel = new QLabel("■ 仿真未启动", this);
+    m_statusSimLabel->setMinimumWidth(160);
+    bar->addWidget(m_statusSimLabel);
+
+    bar->addPermanentWidget(new QLabel(
+        "RedstoneEngineer v0.1  |  Qt " QT_VERSION_STR "  ", this));
 }
 
 void MainWindow::setupSim()
@@ -305,49 +661,47 @@ void MainWindow::setupSim()
     connect(m_simEngine, &SimEngine::tickFinished,
             m_gridScene, &GridScene::markSimChanged);
 
-    connect(m_actSimRun, &QAction::triggered, this, [this]()
-            {
+    connect(m_actSimRun, &QAction::triggered, this, [this]() {
         const int tps      = m_simSpeedBox->value();
         const int interval = 1000 / tps;
         m_simEngine->start(interval);
         updateSimActions(true);
         if (m_statusSimLabel)
-            m_statusSimLabel->setText(
-                QString("● 运行中  %1 t/s").arg(tps)); });
+            m_statusSimLabel->setText(QString("● 运行中  %1 t/s").arg(tps));
+    });
 
-    connect(m_actSimPause, &QAction::triggered, this, [this]()
-            {
+    connect(m_actSimPause, &QAction::triggered, this, [this]() {
         m_simEngine->stop();
         updateSimActions(false);
-        if (m_statusSimLabel) m_statusSimLabel->setText("⏸ 已暂停"); });
+        if (m_statusSimLabel) m_statusSimLabel->setText("⏸ 已暂停");
+    });
 
-    connect(m_actSimStep, &QAction::triggered, this, [this]()
-            {
+    connect(m_actSimStep, &QAction::triggered, this, [this]() {
         m_simEngine->stop();
         updateSimActions(false);
         m_simEngine->stepOnce();
         if (m_statusSimLabel)
             m_statusSimLabel->setText(
-                QString("⏭ 单步  Tick %1").arg(m_simEngine->currentTick())); });
+                QString("⏭ 单步  Tick %1").arg(m_simEngine->currentTick()));
+    });
 
-    connect(m_actSimReset, &QAction::triggered, this, [this]()
-            {
+    connect(m_actSimReset, &QAction::triggered, this, [this]() {
         m_simEngine->stop();
         m_simEngine->reset();
         updateSimActions(false);
         if (m_statusSimLabel) m_statusSimLabel->setText("■ 已重置");
         if (m_simTickLabel)   m_simTickLabel->setText("Tick: 0");
         if (m_gridScene)      m_gridScene->update();
-        if (m_voxelRenderer)  m_voxelRenderer->update(); });
+        if (m_voxelRenderer)  m_voxelRenderer->update();
+    });
 
-    connect(m_simSpeedBox, &QSpinBox::valueChanged, this, [this](int tps)
-            {
+    connect(m_simSpeedBox, &QSpinBox::valueChanged, this, [this](int tps) {
         if (m_simEngine->isRunning()) {
             m_simEngine->start(1000 / tps);
             if (m_statusSimLabel)
-                m_statusSimLabel->setText(
-                    QString("● 运行中  %1 t/s").arg(tps));
-        } });
+                m_statusSimLabel->setText(QString("● 运行中  %1 t/s").arg(tps));
+        }
+    });
 
     updateSimActions(false);
 }
@@ -358,22 +712,17 @@ void MainWindow::onTickFinished(const QVector<VoxelCoord> &changed)
         m_simTickLabel->setText(
             QString("Tick: %1").arg(m_simEngine->currentTick()));
 
-    if (!changed.isEmpty())
-    {
-        if (m_gridScene)
-            m_gridScene->update();
-        if (m_voxelRenderer)
-            m_voxelRenderer->markDirty();
+    if (!changed.isEmpty()) {
+        if (m_gridScene)     m_gridScene->update();
+        if (m_voxelRenderer) m_voxelRenderer->markDirty();
     }
 }
 
 void MainWindow::onSourceInteracted(int x, int y, int z)
 {
-    if (!m_simEngine || !m_world)
-        return;
+    if (!m_simEngine || !m_world) return;
     Block *b = m_world->getBlockMutable(x, y, z);
-    if (!b)
-        return;
+    if (!b) return;
 
     switch (b->type)
     {
@@ -382,8 +731,7 @@ void MainWindow::onSourceInteracted(int x, int y, int z)
         break;
     case BlockType::StoneButton:
     case BlockType::WoodButton:
-        if (!(b->flags & SimFlags::ACTIVE))
-        {
+        if (!(b->flags & SimFlags::ACTIVE)) {
             m_simEngine->toggleSource(x, y, z);
             m_simEngine->scheduleSourceOff(x, y, z, 10);
         }
@@ -398,39 +746,31 @@ void MainWindow::onSourceInteracted(int x, int y, int z)
         break;
     }
 
-    if (m_simEngine->isRunning())
-        return;
+    if (m_simEngine->isRunning()) return;
     m_simEngine->refreshStatic();
 }
 
 void MainWindow::updateSimActions(bool running)
 {
-    if (m_actSimRun)
-        m_actSimRun->setEnabled(!running);
-    if (m_actSimPause)
-        m_actSimPause->setEnabled(running);
-    if (m_actSimStep)
-        m_actSimStep->setEnabled(!running);
+    if (m_actSimRun)   m_actSimRun  ->setEnabled(!running);
+    if (m_actSimPause) m_actSimPause->setEnabled(running);
+    if (m_actSimStep)  m_actSimStep ->setEnabled(!running);
 }
 
 void MainWindow::updateModeActions(GridScene::EditMode mode)
 {
-    if (m_actModePaint)
-        m_actModePaint->setChecked(mode == GridScene::EditMode::Paint);
-    if (m_actModeSelect)
-        m_actModeSelect->setChecked(mode == GridScene::EditMode::Select);
-    if (m_actModeInteract)
-        m_actModeInteract->setChecked(mode == GridScene::EditMode::Interact);
+    if (m_actModePaint)    m_actModePaint   ->setChecked(mode == GridScene::EditMode::Paint);
+    if (m_actModeSelect)   m_actModeSelect  ->setChecked(mode == GridScene::EditMode::Select);
+    if (m_actModeInteract) m_actModeInteract->setChecked(mode == GridScene::EditMode::Interact);
 
-    if (!m_modeHintLabel)
-        return;
-    switch (mode)
-    {
+    if (!m_modeHintLabel) return;
+    switch (mode) {
     case GridScene::EditMode::Paint:
         m_modeHintLabel->setText("  ✏  左键放置  右键擦除  R 旋转画笔");
         break;
     case GridScene::EditMode::Select:
-        m_modeHintLabel->setText("  🖱  左键选中方块  R 旋转选中方块");
+        m_modeHintLabel->setText(
+            "  🖱  左键框选  拖动移动  Del 删除  Ctrl+C/V 复制粘贴  R 旋转（单格）");
         break;
     case GridScene::EditMode::Interact:
         m_modeHintLabel->setText("  ⚡  左键触发信号源  右键循环中继器延迟");
@@ -438,31 +778,74 @@ void MainWindow::updateModeActions(GridScene::EditMode mode)
     }
 }
 
+void MainWindow::onHistoryChanged(bool canUndo, bool canRedo)
+{
+    if (m_actUndo) m_actUndo->setEnabled(canUndo);
+    if (m_actRedo) m_actRedo->setEnabled(canRedo);
+}
+
+void MainWindow::onLayerChanged(int y)
+{
+    if (m_statusLayerLabel)
+        m_statusLayerLabel->setText(QString("Layer  Y = %1").arg(y));
+    if (m_layerSpinBox && m_layerSpinBox->value() != y) {
+        m_layerSpinBox->blockSignals(true);
+        m_layerSpinBox->setValue(y);
+        m_layerSpinBox->blockSignals(false);
+    }
+}
+
+void MainWindow::onGridCoordHovered(int x, int z)
+{
+    if (m_gridScene &&
+        m_gridScene->editMode() == GridScene::EditMode::Paint)
+        if (m_statusCoordLabel)
+            m_statusCoordLabel->setText(
+                QString("X = %1   Z = %2").arg(x).arg(z));
+}
+
+void MainWindow::onBlockModified(int x, int y, int z)
+{
+    if (m_statusBlockLabel && m_world)
+        m_statusBlockLabel->setText(
+            QString("方块数：%1").arg(m_world->blockCount()));
+    if (m_simEngine)
+        m_simEngine->notifyBlockChanged(x, y, z);
+}
+
+QFrame *MainWindow::makeSeparator()
+{
+    auto *sep = new QFrame(this);
+    sep->setFrameShape(QFrame::VLine);
+    sep->setStyleSheet("color: rgba(255,255,255,0.3);");
+    return sep;
+}
+
 void MainWindow::applyDarkTheme()
 {
-    const QColor clrBackground(0x1E, 0x1E, 0x1E);
-    const QColor clrSurface(0x25, 0x25, 0x26);
-    const QColor clrTextPrimary(0xCC, 0xCC, 0xCC);
+    const QColor clrBackground  (0x1E, 0x1E, 0x1E);
+    const QColor clrSurface     (0x25, 0x25, 0x26);
+    const QColor clrTextPrimary (0xCC, 0xCC, 0xCC);
     const QColor clrTextDisabled(0x66, 0x66, 0x66);
-    const QColor clrHighlight(0x26, 0x4F, 0x78);
+    const QColor clrHighlight   (0x26, 0x4F, 0x78);
 
     QPalette p;
-    p.setColor(QPalette::Window, clrBackground);
-    p.setColor(QPalette::WindowText, clrTextPrimary);
-    p.setColor(QPalette::Base, clrSurface);
-    p.setColor(QPalette::AlternateBase, clrBackground);
-    p.setColor(QPalette::Text, clrTextPrimary);
-    p.setColor(QPalette::BrightText, Qt::white);
-    p.setColor(QPalette::ButtonText, clrTextPrimary);
-    p.setColor(QPalette::Disabled, QPalette::Text, clrTextDisabled);
+    p.setColor(QPalette::Window,          clrBackground);
+    p.setColor(QPalette::WindowText,      clrTextPrimary);
+    p.setColor(QPalette::Base,            clrSurface);
+    p.setColor(QPalette::AlternateBase,   clrBackground);
+    p.setColor(QPalette::Text,            clrTextPrimary);
+    p.setColor(QPalette::BrightText,      Qt::white);
+    p.setColor(QPalette::ButtonText,      clrTextPrimary);
+    p.setColor(QPalette::Disabled, QPalette::Text,       clrTextDisabled);
     p.setColor(QPalette::Disabled, QPalette::WindowText, clrTextDisabled);
     p.setColor(QPalette::Disabled, QPalette::ButtonText, clrTextDisabled);
-    p.setColor(QPalette::Button, clrSurface);
-    p.setColor(QPalette::Highlight, clrHighlight);
+    p.setColor(QPalette::Button,          clrSurface);
+    p.setColor(QPalette::Highlight,       clrHighlight);
     p.setColor(QPalette::HighlightedText, Qt::white);
-    p.setColor(QPalette::ToolTipBase, clrSurface);
-    p.setColor(QPalette::ToolTipText, clrTextPrimary);
-    p.setColor(QPalette::Link, QColor(0xE0, 0x6C, 0x3A));
+    p.setColor(QPalette::ToolTipBase,     clrSurface);
+    p.setColor(QPalette::ToolTipText,     clrTextPrimary);
+    p.setColor(QPalette::Link,            QColor(0xE0, 0x6C, 0x3A));
     qApp->setPalette(p);
 
     qApp->setStyleSheet(R"(
@@ -509,343 +892,4 @@ void MainWindow::applyDarkTheme()
             border: 1px solid #E06C3A; padding: 4px; font-size: 12px;
         }
     )");
-}
-
-QFrame *MainWindow::makeSeparator()
-{
-    auto *sep = new QFrame(this);
-    sep->setFrameShape(QFrame::VLine);
-    sep->setStyleSheet("color: rgba(255,255,255,0.3);");
-    return sep;
-}
-
-void MainWindow::setupLayout()
-{
-
-    QMenuBar *mb = new QMenuBar(this);
-
-    QMenu *mFile = mb->addMenu("文件(&F)");
-    auto *actNew = mFile->addAction("新建(&N)");
-    auto *actOpen = mFile->addAction("打开(&O)");
-    auto *actSave = mFile->addAction("保存(&S)");
-    auto *actSaveAs = mFile->addAction("另存为(&A)...");
-    mFile->addSeparator();
-    mFile->addAction("退出(&Q)", qApp, &QApplication::quit);
-
-    actNew->setShortcut(QKeySequence::New);
-    actOpen->setShortcut(QKeySequence::Open);
-    actSave->setShortcut(QKeySequence::Save);
-    actSaveAs->setShortcut(QKeySequence::SaveAs);
-
-    connect(actNew, &QAction::triggered, this, &MainWindow::newFile);
-    connect(actOpen, &QAction::triggered, this, &MainWindow::openFile);
-    connect(actSave, &QAction::triggered, this, &MainWindow::saveFile);
-    connect(actSaveAs, &QAction::triggered, this, &MainWindow::saveFileAs);
-
-    QMenu *mView = mb->addMenu("视图(&V)");
-    QAction *actResetCam = mView->addAction("重置 3D 视角 (F)");
-    actResetCam->setShortcut(QKeySequence(Qt::Key_F));
-
-    mb->addMenu("帮助(&H)")->addAction("关于");
-    setMenuBar(mb);
-
-    m_palette = new BlockPalette(this);
-
-    connect(m_palette, &BlockPalette::blockSelected,
-            this, [this](BlockType type)
-            {
-        if (m_gridScene) m_gridScene->setCurrentBlockType(type);
-        if (m_brushLabel && m_gridScene) {
-            const auto &meta    = getBlockMeta(type);
-            const char *fnames[]= {"北","东","南","西","上","下"};
-            m_brushLabel->setText(
-                QString("  画笔：%1  朝向：%2")
-                    .arg(QString::fromUtf8(meta.displayName))
-                    .arg(fnames[static_cast<int>(m_gridScene->currentFacing())]));
-        } });
-
-    m_gridScene = new GridScene(m_world, this);
-    m_gridView = new GridView(this);
-    m_gridView->setScene(m_gridScene);
-    m_gridView->centerOn(0, 0);
-
-    connect(m_gridScene, &GridScene::layerChanged,
-            this, &MainWindow::onLayerChanged);
-    connect(m_gridScene, &GridScene::blockModified,
-            this, &MainWindow::onBlockModified);
-    connect(m_gridView, &GridView::gridCoordHovered,
-            this, &MainWindow::onGridCoordHovered);
-    connect(m_gridView, &GridView::rotateRequested,
-            m_gridScene, &GridScene::rotateCurrent);
-
-    connect(m_gridScene, &GridScene::facingChanged,
-            this, [this](BlockFacing f)
-            {
-        if (!m_brushLabel || !m_gridScene) return;
-        const char *fnames[] = {"北","东","南","西","上","下"};
-        const auto &meta = getBlockMeta(m_gridScene->currentBlockType());
-        m_brushLabel->setText(
-            QString("  画笔：%1  朝向：%2")
-                .arg(QString::fromUtf8(meta.displayName))
-                .arg(fnames[static_cast<int>(f)])); });
-
-    connect(m_gridScene, &GridScene::selectionChanged,
-            this, [this](int x, int, int z, const Block &b)
-            {
-        if (!m_statusCoordLabel) return;
-        const auto &meta     = getBlockMeta(b.type);
-        const char *fnames[] = {"北","东","南","西","上","下"};
-        m_statusCoordLabel->setText(
-            QString("选中  X=%1 Z=%2  %3  朝向:%4")
-                .arg(x).arg(z)
-                .arg(QString::fromUtf8(meta.displayName))
-                .arg(fnames[static_cast<int>(b.facing)])); });
-
-    connect(m_gridScene, &GridScene::blockModified,
-            this, [this](int, int, int)
-            { setModified(true); });
-
-    m_voxelRenderer = new VoxelRenderer(m_world, this);
-    m_voxelRenderer->setMinimumWidth(300);
-
-    connect(actResetCam, &QAction::triggered,
-            m_voxelRenderer, &VoxelRenderer::resetCamera);
-
-    if (m_world && m_voxelRenderer)
-    {
-        m_world->setChangeCallback([this](int x, int y, int z, const Block &block)
-                                   {
-            Q_UNUSED(x); Q_UNUSED(y); Q_UNUSED(z); Q_UNUSED(block);
-            if (m_voxelRenderer) m_voxelRenderer->markDirty(); });
-    }
-
-    m_splitter = new QSplitter(Qt::Horizontal, this);
-    m_splitter->addWidget(m_palette);
-    m_splitter->addWidget(m_gridView);
-    m_splitter->addWidget(m_voxelRenderer);
-    m_splitter->setStretchFactor(0, 0);
-    m_splitter->setStretchFactor(1, 6);
-    m_splitter->setStretchFactor(2, 4);
-    m_splitter->setSizes({220, 750, 450});
-    m_splitter->setChildrenCollapsible(false);
-    setCentralWidget(m_splitter);
-}
-
-void MainWindow::setupToolBar()
-{
-    m_editorToolBar = addToolBar("编辑器工具栏");
-    m_editorToolBar->setMovable(false);
-    m_editorToolBar->setFloatable(false);
-    m_editorToolBar->setObjectName("editorToolBar");
-
-    m_editorToolBar->addWidget(new QLabel("  层级 Y：", this));
-
-    auto *btnDown = new QAction("▼", this);
-    auto *btnUp = new QAction("▲", this);
-    btnDown->setToolTip("降低一层 (Y-1)");
-    btnUp->setToolTip("升高一层 (Y+1)");
-
-    m_layerSpinBox = new QSpinBox(this);
-    m_layerSpinBox->setRange(VoxelWorld::LAYER_MIN, VoxelWorld::LAYER_MAX);
-    m_layerSpinBox->setValue(0);
-
-    connect(m_layerSpinBox, &QSpinBox::valueChanged, this, [this](int v)
-            {
-        if (m_gridScene) m_gridScene->setCurrentLayer(v); });
-    connect(btnDown, &QAction::triggered, this,
-            [this]()
-            { m_layerSpinBox->setValue(m_layerSpinBox->value() - 1); });
-    connect(btnUp, &QAction::triggered, this,
-            [this]()
-            { m_layerSpinBox->setValue(m_layerSpinBox->value() + 1); });
-
-    m_editorToolBar->addAction(btnDown);
-    m_editorToolBar->addWidget(m_layerSpinBox);
-    m_editorToolBar->addAction(btnUp);
-    m_editorToolBar->addSeparator();
-
-    auto *btnClear = new QAction("🗑  清空当前层", this);
-    connect(btnClear, &QAction::triggered, this, [this]()
-            {
-        if (!m_world || !m_gridScene) return;
-        const int y = m_gridScene->currentLayer();
-        QVector<VoxelCoord> toErase;
-        for (const auto &[coord, block] : m_world->allBlocks())
-            if (coord.y == y) toErase.append(coord);
-        for (const auto &c : toErase)
-            m_world->clearBlock(c.x, c.y, c.z);
-        m_gridScene->refresh();
-        setModified(true); });
-    m_editorToolBar->addAction(btnClear);
-    m_editorToolBar->addSeparator();
-
-    m_brushLabel = new QLabel("  画笔：石头  朝向：北", this);
-    m_brushLabel->setStyleSheet("color: #AAAAAA; font-size: 12px;");
-    m_editorToolBar->addWidget(m_brushLabel);
-}
-
-void MainWindow::setupModeToolBar()
-{
-    m_modeToolBar = addToolBar("编辑模式");
-    m_modeToolBar->setMovable(false);
-    m_modeToolBar->setFloatable(false);
-    m_modeToolBar->setObjectName("modeToolBar");
-
-    auto *label = new QLabel("  模式：", this);
-    label->setStyleSheet("color:#AAAAAA; font-size:12px;");
-    m_modeToolBar->addWidget(label);
-
-    auto *group = new QActionGroup(this);
-    group->setExclusive(true);
-
-    m_actModePaint = new QAction("✏  绘制", this);
-    m_actModePaint->setToolTip("绘制模式：左键放置，右键擦除，R 旋转画笔  快捷键 Q");
-    m_actModePaint->setCheckable(true);
-    m_actModePaint->setChecked(true);
-    group->addAction(m_actModePaint);
-    connect(m_actModePaint, &QAction::triggered, this, [this]()
-            {
-        if (m_gridScene) m_gridScene->setEditMode(GridScene::EditMode::Paint); });
-    m_modeToolBar->addAction(m_actModePaint);
-
-    m_actModeSelect = new QAction("🖱  选择", this);
-    m_actModeSelect->setToolTip("选择模式：左键选中，R 旋转选中方块  快捷键 E");
-    m_actModeSelect->setCheckable(true);
-    group->addAction(m_actModeSelect);
-    connect(m_actModeSelect, &QAction::triggered, this, [this]()
-            {
-        if (m_gridScene) m_gridScene->setEditMode(GridScene::EditMode::Select); });
-    m_modeToolBar->addAction(m_actModeSelect);
-
-    m_actModeInteract = new QAction("⚡  交互", this);
-    m_actModeInteract->setToolTip(
-        "交互模式：左键触发拉杆/按钮，右键循环中继器延迟  快捷键 T");
-    m_actModeInteract->setCheckable(true);
-    group->addAction(m_actModeInteract);
-    connect(m_actModeInteract, &QAction::triggered, this, [this]()
-            {
-        if (m_gridScene) m_gridScene->setEditMode(GridScene::EditMode::Interact); });
-    m_modeToolBar->addAction(m_actModeInteract);
-
-    m_modeToolBar->addSeparator();
-
-    m_modeHintLabel = new QLabel("  ✏  左键放置  右键擦除  R 旋转画笔", this);
-    m_modeHintLabel->setStyleSheet("color:#666688; font-size:11px;");
-    m_modeToolBar->addWidget(m_modeHintLabel);
-
-    connect(m_gridScene, &GridScene::editModeChanged,
-            this, &MainWindow::updateModeActions);
-}
-
-void MainWindow::setupSimToolBar()
-{
-    m_simToolBar = addToolBar("仿真工具栏");
-    m_simToolBar->setMovable(false);
-    m_simToolBar->setFloatable(false);
-    m_simToolBar->setObjectName("simToolBar");
-
-    auto *simLabel = new QLabel("  ⚡ 仿真：", this);
-    simLabel->setStyleSheet("color:#E06C3A; font-weight:bold; font-size:12px;");
-    m_simToolBar->addWidget(simLabel);
-
-    m_actSimRun = new QAction("▶  运行", this);
-    m_actSimRun->setToolTip("开始仿真  Space");
-    m_actSimRun->setShortcut(QKeySequence(Qt::Key_Space));
-    m_simToolBar->addAction(m_actSimRun);
-
-    m_actSimPause = new QAction("⏸  暂停", this);
-    m_actSimPause->setToolTip("暂停仿真  Space");
-    m_simToolBar->addAction(m_actSimPause);
-
-    m_actSimStep = new QAction("⏭  单步", this);
-    m_actSimStep->setToolTip("手动前进一个 tick  Tab");
-    m_actSimStep->setShortcut(QKeySequence(Qt::Key_Tab));
-    m_simToolBar->addAction(m_actSimStep);
-
-    m_simToolBar->addSeparator();
-
-    m_actSimReset = new QAction("⏹  重置", this);
-    m_actSimReset->setToolTip("停止并清除所有仿真状态");
-    m_simToolBar->addAction(m_actSimReset);
-
-    m_simToolBar->addSeparator();
-
-    m_simToolBar->addWidget(new QLabel("  速率：", this));
-
-    m_simSpeedBox = new QSpinBox(this);
-    m_simSpeedBox->setRange(1, 20);
-    m_simSpeedBox->setValue(4);
-    m_simSpeedBox->setSuffix(" t/s");
-    m_simSpeedBox->setToolTip("仿真速率（1~20 tick/s）");
-    m_simToolBar->addWidget(m_simSpeedBox);
-
-    m_simToolBar->addSeparator();
-
-    m_simTickLabel = new QLabel("  Tick: 0", this);
-    m_simTickLabel->setStyleSheet(
-        "color:#9CDCFE; font-family:monospace; font-size:12px; min-width:100px;");
-    m_simToolBar->addWidget(m_simTickLabel);
-
-    m_simToolBar->addSeparator();
-
-    auto *simHint = new QLabel(
-        "  Space 运行/暂停  Tab 单步  Q 绘制  E 选择  T 交互  R 旋转  V 预览下层", this);
-    simHint->setStyleSheet("color:#666688; font-size:11px;");
-    m_simToolBar->addWidget(simHint);
-}
-
-void MainWindow::setupStatusBar()
-{
-    QStatusBar *bar = statusBar();
-
-    m_statusLayerLabel = new QLabel("Layer  Y = 0", this);
-    m_statusLayerLabel->setMinimumWidth(120);
-    bar->addWidget(m_statusLayerLabel);
-    bar->addWidget(makeSeparator());
-
-    m_statusCoordLabel = new QLabel("X = --   Z = --", this);
-    m_statusCoordLabel->setMinimumWidth(260);
-    bar->addWidget(m_statusCoordLabel);
-    bar->addWidget(makeSeparator());
-
-    m_statusBlockLabel = new QLabel("方块数：0", this);
-    m_statusBlockLabel->setMinimumWidth(100);
-    bar->addWidget(m_statusBlockLabel);
-    bar->addWidget(makeSeparator());
-
-    m_statusSimLabel = new QLabel("■ 仿真未启动", this);
-    m_statusSimLabel->setMinimumWidth(160);
-    bar->addWidget(m_statusSimLabel);
-
-    bar->addPermanentWidget(new QLabel(
-        "RedstoneEngineer v0.1  |  Qt " QT_VERSION_STR "  ", this));
-}
-
-void MainWindow::onLayerChanged(int y)
-{
-    if (m_statusLayerLabel)
-        m_statusLayerLabel->setText(QString("Layer  Y = %1").arg(y));
-    if (m_layerSpinBox && m_layerSpinBox->value() != y)
-    {
-        m_layerSpinBox->blockSignals(true);
-        m_layerSpinBox->setValue(y);
-        m_layerSpinBox->blockSignals(false);
-    }
-}
-
-void MainWindow::onGridCoordHovered(int x, int z)
-{
-    if (m_gridScene && m_gridScene->editMode() == GridScene::EditMode::Paint)
-        if (m_statusCoordLabel)
-            m_statusCoordLabel->setText(
-                QString("X = %1   Z = %2").arg(x).arg(z));
-}
-
-void MainWindow::onBlockModified(int x, int y, int z)
-{
-    if (m_statusBlockLabel && m_world)
-        m_statusBlockLabel->setText(
-            QString("方块数：%1").arg(m_world->blockCount()));
-    if (m_simEngine)
-        m_simEngine->notifyBlockChanged(x, y, z);
 }

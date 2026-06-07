@@ -64,7 +64,6 @@ void BlockPalette::setupGroups()
             const BlockMeta &meta = getBlockMeta(type);
             if (meta.group != def.group) continue;
 
-            
             if (type == BlockType::PistonHead) continue;
 
             auto *item = new PaletteItem(type, this);
@@ -79,7 +78,6 @@ void BlockPalette::setupGroups()
 
     relayoutAll();
 
-    
     for (auto *grp : m_groups) {
         for (auto *item : grp->items()) {
             if (item->blockType() == BlockType::Stone) {

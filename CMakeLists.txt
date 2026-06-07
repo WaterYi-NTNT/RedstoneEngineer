@@ -6,12 +6,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
+set(ZLIB_INCLUDE_DIR "E:/Qt/Tools/mingw1310_64/x86_64-w64-mingw32/include")
+set(ZLIB_LIBRARY     "E:/Qt/Tools/mingw1310_64/x86_64-w64-mingw32/lib/libz.a")
 
 if(NOT DEFINED CMAKE_PREFIX_PATH)
     set(CMAKE_PREFIX_PATH "E:/Qt/6.11.0/mingw_64")
 endif()
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGLWidgets)
+find_package(ZLIB REQUIRED)
 
 set(PROJECT_SOURCES
     src/main.cpp
@@ -34,6 +37,10 @@ set(PROJECT_SOURCES
     src/editor2d/GridView.cpp
     src/editor2d/GridScene.h
     src/editor2d/GridScene.cpp
+    src/editor2d/EditorCommand.h
+    src/editor2d/EditorCommand.cpp
+    src/editor2d/CommandHistory.h
+    src/editor2d/CommandHistory.cpp
 
     src/palette/PaletteItem.h
     src/palette/PaletteItem.cpp
@@ -57,6 +64,9 @@ set(PROJECT_SOURCES
     src/sim/SimEngine.cpp
     src/sim/RedstoneLogic.h
     src/sim/RedstoneLogic.cpp
+
+    src/io/LitematicExporter.h
+    src/io/LitematicExporter.cpp
 )
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/resources/resources.qrc")
@@ -74,6 +84,7 @@ add_custom_command(TARGET RedstoneEngineer POST_BUILD
 
 target_link_libraries(RedstoneEngineer PRIVATE
     Qt6::Core Qt6::Gui Qt6::Widgets Qt6::OpenGLWidgets opengl32
+    ZLIB::ZLIB
 )
 
 target_include_directories(RedstoneEngineer PRIVATE
@@ -83,4 +94,5 @@ target_include_directories(RedstoneEngineer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/palette
     ${CMAKE_CURRENT_SOURCE_DIR}/src/preview3d
     ${CMAKE_CURRENT_SOURCE_DIR}/src/sim
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/io
 )

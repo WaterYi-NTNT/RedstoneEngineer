@@ -5,6 +5,7 @@
 .vscode/
 CMakeCache.txt
 CMakeFiles/
+scripts/
 *.exe
 *.o
 *.obj
